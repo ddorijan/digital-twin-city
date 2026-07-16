@@ -22,8 +22,26 @@ Studentski rad - interaktivna web aplikacija koja simulira digital twin za centa
 ### Backend
 - **Node.js** + **Express** + **TypeScript**
 - **Socket.IO** - WebSocket server
-- **SQLite** - baza podataka
+- **SQLite** + **better-sqlite3** - baza podataka
+- **node-cron** - automatsko čišćenje podataka
 - **CORS** - cross-origin requests
+
+## 💾 Baza Podataka
+
+Sustav koristi **SQLite** bazu za spremanje:
+- ✅ **Senzorska očitanja** - svako očitanje svakih 3 sekunde
+- ✅ **Povijesni podaci** - 7 dana raw data + 90 dana agregiranih podataka
+- ✅ **Gradski događaji** - nesreće, radovi, incidenti
+- ✅ **Upozorenja** - automatska upozorenja kad vrijednosti pređu pragove
+- ✅ **Automatsko čišćenje** - dnevni cleanup job u 3:00 AM
+
+**Retention Policy:**
+- Raw data: 7 dana (~8.4 GB)
+- 5-minutna agregacija: 30 dana (~300 MB)
+- Satna agregacija: 90 dana (~365 MB)
+- **Ukupno: ~9 GB za 90 dana povijesti**
+
+📖 Detaljnu dokumentaciju vidi u [DATABASE.md](./DATABASE.md)
 
 ## 📊 Simulirani Podaci
 
@@ -137,17 +155,35 @@ ZAVRSNI/
 
 ### Trenutno Implementirano
 - ✅ **Stvarna mapa Đakova** - Mapbox s pravim ulicama i zgradama
-- ✅ 3D simulacija centra grada
-- ✅ WebSocket real-time komunikacija
-- ✅ Simulacija podataka (promet, okoliš, energija, parking)
-- ✅ Dashboard s live metrikama
-- ✅ Oznake senzora na mapi
-- ✅ 3D zgrade (ako su dostupne za Đakovo)
+- ✅ **3D simulacija** centra grada
+- ✅ **WebSocket real-time** komunikacija
+- ✅ **Simulacija podataka** (promet, okoliš, energija, parking)
+- ✅ **Dashboard** s live metrikama
+- ✅ **Oznake senzora** na mapi
+- ✅ **3D zgrade** (ako su dostupne za Đakovo)
+- ✅ **SQLite baza podataka** - spremanje svih očitanja
+- ✅ **Povijesni podaci** - 90 dana povijesti s agregacijom
+- ✅ **History API** - dohvaćanje podataka za analizu
+- ✅ **Events sustav** - praćenje incidenata u gradu
+- ✅ **Alerts sustav** - automatska upozorenja
+- ✅ **Admin panel** - upravljanje senzorima i bazom
+- ✅ **Automatsko čišćenje** - dnevni cleanup job
+
+### API Endpointi
+- 📡 `GET /api/locations` - Lokacije svih senzora
+- 📡 `GET /api/data` - Trenutni podaci
+- 📊 `GET /api/history/sensor/:id` - Povijest za senzor
+- 📊 `GET /api/history/stats` - Statistika baze
+- 🚨 `GET /api/events` - Gradski događaji
+- 🚨 `GET /api/events/alerts` - Upozorenja
+- 🔐 `POST /api/admin/login` - Admin login
+- 🔐 `GET /api/admin/database/stats` - Database stats
 
 ### Prikazi:
 1. **Stvarna Mapa** - Mapbox prikaz stvarnog Đakova s 3D zgradama
 2. **3D Simulacija** - Naša simulirana vizualizacija centra
 3. **Podaci i Senzori** - Lista svih senzora i trenutnih vrijednosti
+4. **Admin Panel** - Upravljanje senzorima i bazom podataka
 
 ### Za Proširenje
 - 🔄 Detaljniji 3D modeli zgrada centra Đakova

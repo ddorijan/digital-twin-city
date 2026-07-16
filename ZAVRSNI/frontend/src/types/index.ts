@@ -1,10 +1,13 @@
 // Frontend types matching backend
+export type SensorStatus = 'normal' | 'warning' | 'critical';
+export type SensorType = 'traffic' | 'environment' | 'energy' | 'parking' | 'traffic-light';
+
 export interface SensorLocation {
   id: string;
   name: string;
   lat: number;
   lng: number;
-  type: 'traffic' | 'environment' | 'energy' | 'parking' | 'traffic-light';
+  type: SensorType;
 }
 
 export interface TrafficData {
@@ -65,4 +68,22 @@ export interface CityData {
   metrics: CityMetrics;
   locations: SensorLocation[];
   timestamp: number;
+}
+
+export interface LiveFeedEntry {
+  id: string;
+  timestamp: number;
+  sensorId: string;
+  sensorName: string;
+  type: SensorType;
+  status: SensorStatus;
+  message: string;
+}
+
+export interface MetricSnapshot {
+  time: string;
+  totalVehicles: number;
+  averageAirQuality: number;
+  totalEnergyConsumption: number;
+  parkingOccupancy: number;
 }

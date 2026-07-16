@@ -7,4 +7,8 @@ export default defineConfig({
   css: {
     postcss: './postcss.config.js',
   },
+  server: {
+    // Enable HTML5 history mode for client-side routing
+    historyApiFallback: true,
+  },
 })

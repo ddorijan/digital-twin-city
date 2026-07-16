@@ -1,0 +1,296 @@
+[
+  {
+    "id": "light-003",
+    "name": "Frankopanska-Kralja Tomislava",
+    "lat": 45.311339,
+    "lng": 18.415898,
+    "type": "traffic-light"
+  },
+  {
+    "id": "traffic-001",
+    "name": "ulaz Preradovićeva",
+    "lat": 45.282773,
+    "lng": 18.409836,
+    "type": "traffic"
+  },
+  {
+    "id": "traffic-002",
+    "name": "ulaz stopShop",
+    "lat": 45.286325,
+    "lng": 18.409459,
+    "type": "traffic"
+  },
+  {
+    "id": "parking-001",
+    "name": "StopShop",
+    "lat": 45.285928,
+    "lng": 18.407894,
+    "type": "parking"
+  },
+  {
+    "id": "traffic-003",
+    "name": "Preradoviceva raskrizje",
+    "lat": 45.293492,
+    "lng": 18.410198,
+    "type": "traffic"
+  },
+  {
+    "id": "traffic-004",
+    "name": "Preradoviceva plodine",
+    "lat": 45.297553,
+    "lng": 18.411284,
+    "type": "traffic"
+  },
+  {
+    "id": "parking-002",
+    "name": "Plodine ",
+    "lat": 45.297306,
+    "lng": 18.410675,
+    "type": "parking"
+  },
+  {
+    "id": "traffic-005",
+    "name": "Preradoviceva",
+    "lat": 45.300086,
+    "lng": 18.411921,
+    "type": "traffic"
+  },
+  {
+    "id": "traffic-006",
+    "name": "Ulica Otona Ivekovića no.1",
+    "lat": 45.299423,
+    "lng": 18.408891,
+    "type": "traffic"
+  },
+  {
+    "id": "traffic-007",
+    "name": "Ulica Otona Ivekovića no.2",
+    "lat": 45.299838,
+    "lng": 18.405552,
+    "type": "traffic"
+  },
+  {
+    "id": "traffic-008",
+    "name": "Dogenijeva",
+    "lat": 45.301139,
+    "lng": 18.405429,
+    "type": "traffic"
+  },
+  {
+    "id": "traffic-009",
+    "name": "Dogenijeva-groblje",
+    "lat": 45.303824,
+    "lng": 18.405787,
+    "type": "traffic"
+  },
+  {
+    "id": "traffic-010",
+    "name": "Ulica Otona Ivekovića no.3",
+    "lat": 45.300527,
+    "lng": 18.400574,
+    "type": "traffic"
+  },
+  {
+    "id": "traffic-011",
+    "name": "Mandić-ulaz",
+    "lat": 45.300555,
+    "lng": 18.397934,
+    "type": "traffic"
+  },
+  {
+    "id": "traffic-012",
+    "name": "Mandić no.2",
+    "lat": 45.304291,
+    "lng": 18.402426,
+    "type": "traffic"
+  },
+  {
+    "id": "parking-003",
+    "name": "Groblje",
+    "lat": 45.30418,
+    "lng": 18.402534,
+    "type": "parking"
+  },
+  {
+    "id": "traffic-013",
+    "name": "Josip Čolnić",
+    "lat": 45.306599,
+    "lng": 18.40627,
+    "type": "traffic"
+  },
+  {
+    "id": "parking-004",
+    "name": "groblje no.2",
+    "lat": 45.305199,
+    "lng": 18.405374,
+    "type": "parking"
+  },
+  {
+    "id": "parking-005",
+    "name": "groblje no.3",
+    "lat": 45.305109,
+    "lng": 18.406218,
+    "type": "parking"
+  },
+  {
+    "id": "traffic-014",
+    "name": "Zvečaj II",
+    "lat": 45.301214,
+    "lng": 18.410872,
+    "type": "traffic"
+  },
+  {
+    "id": "traffic-015",
+    "name": "Bosutska",
+    "lat": 45.30108,
+    "lng": 18.406382,
+    "type": "traffic"
+  },
+  {
+    "id": "traffic-016",
+    "name": "Bosutska no.2",
+    "lat": 45.302144,
+    "lng": 18.406408,
+    "type": "traffic"
+  },
+  {
+    "id": "traffic-017",
+    "name": "Certisa",
+    "lat": 45.29323,
+    "lng": 18.412529,
+    "type": "traffic"
+  },
+  {
+    "id": "traffic-018",
+    "name": "Tordinčeva",
+    "lat": 45.294053,
+    "lng": 18.404954,
+    "type": "traffic"
+  },
+  {
+    "id": "traffic-019",
+    "name": "Zvečaj I",
+    "lat": 45.301961,
+    "lng": 18.408144,
+    "type": "traffic"
+  },
+  {
+    "id": "traffic-020",
+    "name": "Zvečaj II no.2",
+    "lat": 45.304513,
+    "lng": 18.407885,
+    "type": "traffic"
+  },
+  {
+    "id": "parking-006",
+    "name": "Veliki park",
+    "lat": 45.305479,
+    "lng": 18.408523,
+    "type": "parking"
+  },
+  {
+    "id": "parking-007",
+    "name": "Tenis",
+    "lat": 45.305362,
+    "lng": 18.407605,
+    "type": "parking"
+  },
+  {
+    "id": "traffic-021",
+    "name": "Zvečaj I no.2",
+    "lat": 45.302918,
+    "lng": 18.41107,
+    "type": "traffic"
+  },
+  {
+    "id": "parking-008",
+    "name": "JYSK",
+    "lat": 45.290634,
+    "lng": 18.411507,
+    "type": "parking"
+  },
+  {
+    "id": "traffic-022",
+    "name": "Mandić no.3",
+    "lat": 45.306757,
+    "lng": 18.404888,
+    "type": "traffic"
+  },
+  {
+    "id": "traffic-023",
+    "name": "Franje Račkog-ulaz",
+    "lat": 45.311744,
+    "lng": 18.386566,
+    "type": "traffic"
+  },
+  {
+    "id": "parking-009",
+    "name": "Kaufland",
+    "lat": 45.310218,
+    "lng": 18.39741,
+    "type": "parking"
+  },
+  {
+    "id": "traffic-024",
+    "name": "Franje Račkog king",
+    "lat": 45.310427,
+    "lng": 18.400532,
+    "type": "traffic"
+  },
+  {
+    "id": "traffic-025",
+    "name": "Franje Račkog dole",
+    "lat": 45.308452,
+    "lng": 18.405137,
+    "type": "traffic"
+  },
+  {
+    "id": "traffic-026",
+    "name": "Kralj Zvonimir",
+    "lat": 45.311491,
+    "lng": 18.396955,
+    "type": "traffic"
+  },
+  {
+    "id": "traffic-027",
+    "name": "Kralj Držislav",
+    "lat": 45.311455,
+    "lng": 18.398467,
+    "type": "traffic"
+  },
+  {
+    "id": "traffic-028",
+    "name": "Kralj Trpimir",
+    "lat": 45.312209,
+    "lng": 18.398288,
+    "type": "traffic"
+  },
+  {
+    "id": "traffic-029",
+    "name": "Knez Domagoj",
+    "lat": 45.312918,
+    "lng": 18.398945,
+    "type": "traffic"
+  },
+  {
+    "id": "traffic-030",
+    "name": "Knez Branimir",
+    "lat": 45.312232,
+    "lng": 18.24026,
+    "type": "traffic"
+  },
+  {
+    "id": "traffic-031",
+    "name": "Kralj Zvonimir2",
+    "lat": 45.313671,
+    "lng": 18.399423,
+    "type": "traffic"
+  },
+  {
+    "id": "traffic-032",
+    "name": "Knez Višeslav",
+    "lat": 45.311732,
+    "lng": 18.400165,
+    "type": "traffic"
+  }
+]

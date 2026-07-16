@@ -6,24 +6,46 @@ import type {
   TrafficLightData,
   CityMetrics
 } from '../../types/index.js';
-import { sensorLocations } from './locations.js';
+import { getSensorLocations } from './locations.js';
 
 // Helper function to generate random value within range
 const randomInRange = (min: number, max: number): number => {
   return Math.random() * (max - min) + min;
 };
 
+// Đakovo city centre (Cathedral / main square)
+const CENTRE_LAT = 45.3089;
+const CENTRE_LNG = 18.4107;
+// Maximum radius considered part of the city (~2 km in lat-degree equivalent)
+const MAX_RADIUS = 0.022;
+
 // Simulate traffic data
 export const generateTrafficData = (): TrafficData[] => {
+  const sensorLocations = getSensorLocations(); // Load fresh data
   const trafficSensors = sensorLocations.filter(s => s.type === 'traffic');
   
   return trafficSensors.map(sensor => {
     const hour = new Date().getHours();
     const isRushHour = (hour >= 7 && hour <= 9) || (hour >= 16 && hour <= 18);
     
-    const baseVehicles = isRushHour ? 50 : 20;
-    const vehicleCount = Math.floor(randomInRange(baseVehicles, baseVehicles + 30));
-    const averageSpeed = isRushHour ? randomInRange(15, 30) : randomInRange(30, 50);
+    // centreFactor: 1.0 = at city centre, 0.0 = at city edge or beyond
+    const distDeg = Math.sqrt(
+      Math.pow(sensor.lat - CENTRE_LAT, 2) +
+      Math.pow((sensor.lng - CENTRE_LNG) * 0.71, 2) // lng degrees shorter at this latitude
+    );
+    const centreFactor = Math.max(0, 1 - distDeg / MAX_RADIUS);
+
+    // Centre sensors get far more vehicles during rush hour than peripheral ones
+    const baseVehicles = isRushHour
+      ? Math.round(20 + centreFactor * 55) // centre ≈ 75, edge ≈ 20
+      : Math.round(8  + centreFactor * 17); // centre ≈ 25, edge ≈ 8
+    const range = isRushHour ? 20 : 12;
+    const vehicleCount = Math.floor(randomInRange(baseVehicles, baseVehicles + range));
+
+    // Centre is slower during rush hour
+    const speedMin = isRushHour ? 15 + (1 - centreFactor) * 15 : 30;
+    const speedMax = isRushHour ? 30 + (1 - centreFactor) * 15 : 50;
+    const averageSpeed = randomInRange(speedMin, speedMax);
     
     let congestionLevel: 'low' | 'medium' | 'high' = 'low';
     if (vehicleCount > 60) congestionLevel = 'high';
@@ -33,7 +55,7 @@ export const generateTrafficData = (): TrafficData[] => {
       sensorId: sensor.id,
       timestamp: Date.now(),
       vehicleCount,
-      averageSpeed: Math.round(averageSpeed * 10) / 10,
+      averageSpeed: Math.round(Math.max(5, averageSpeed) * 10) / 10,
       congestionLevel
     };
   });
@@ -41,6 +63,7 @@ export const generateTrafficData = (): TrafficData[] => {
 
 // Simulate environment data
 export const generateEnvironmentData = (): EnvironmentData[] => {
+  const sensorLocations = getSensorLocations(); // Load fresh data
   const envSensors = sensorLocations.filter(s => s.type === 'environment');
   
   return envSensors.map(sensor => {
@@ -66,6 +89,7 @@ export const generateEnvironmentData = (): EnvironmentData[] => {
 
 // Simulate energy data
 export const generateEnergyData = (): EnergyData[] => {
+  const sensorLocations = getSensorLocations(); // Load fresh data
   const energySensors = sensorLocations.filter(s => s.type === 'energy');
   
   return energySensors.map(sensor => {
@@ -84,6 +108,7 @@ export const generateEnergyData = (): EnergyData[] => {
 
 // Simulate parking data
 export const generateParkingData = (): ParkingData[] => {
+  const sensorLocations = getSensorLocations(); // Load fresh data
   const parkingSensors = sensorLocations.filter(s => s.type === 'parking');
   
   return parkingSensors.map(sensor => {
@@ -102,6 +127,7 @@ export const generateParkingData = (): ParkingData[] => {
 
 // Simulate traffic light data
 export const generateTrafficLightData = (): TrafficLightData[] => {
+  const sensorLocations = getSensorLocations(); // Load fresh data
   const lightSensors = sensorLocations.filter(s => s.type === 'traffic-light');
   
   return lightSensors.map(sensor => {
@@ -125,8 +151,13 @@ export const calculateCityMetrics = (
   energyData: EnergyData[],
   parkingData: ParkingData[]
 ): CityMetrics => {
-  const totalVehicles = trafficData.reduce((sum, d) => sum + d.vehicleCount, 0);
-  
+  // Use average per sensor × city scale factor so the metric doesn't
+  // inflate when more sensors are added (sensor-count independent).
+  const avgVehiclesPerSensor = trafficData.length > 0
+    ? trafficData.reduce((sum, d) => sum + d.vehicleCount, 0) / trafficData.length
+    : 0;
+  const totalVehicles = Math.round(avgVehiclesPerSensor * 8);
+
   const avgAqi = environmentData.reduce((sum, d) => sum + d.airQuality.aqi, 0) / environmentData.length;
   
   const totalEnergy = energyData.reduce((sum, d) => sum + d.consumption, 0);
@@ -159,7 +190,7 @@ export const generateAllData = () => {
     parking,
     trafficLights,
     metrics,
-    locations: sensorLocations,
+    locations: getSensorLocations(), // Load fresh data
     timestamp: Date.now()
   };
 };

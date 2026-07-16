@@ -1,0 +1,176 @@
+Fakultet elektrotehnike, računarstva i informacijskih tehnologija
+Završni rad
+
+NASLOV: Digitalni blizanac grada – web aplikacija za praćenje i simulaciju
+        gradske infrastrukture u stvarnom vremenu
+
+Autor: [Ime i prezime]
+Mentor: [Ime i prezime mentora]
+Akademska godina: 2025./2026.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+
+1. UVOD
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Ubrzana urbanizacija i digitalizacija javnih usluga pred gradsku upravu postavljaju
+sve složenije zahtjeve u pogledu praćenja, analize i upravljanja gradskom
+infrastrukturom. Suvremeni gradovi generiraju goleme količine podataka putem
+senzorskih mreža, prometnih sustava, mreža javne rasvjete, parkirnih površina i
+okolišnih mjernih postaja. Sposobnost prikupljanja, obrade i vizualizacije tih
+podataka u stvarnom vremenu postala je ključan preduvjet za donošenje informiranih
+odluka i učinkovito upravljanje urbanim prostorom.
+
+Jedan od najperspektivnijih koncepta koji odgovara na te izazove jest digitalni
+blizanac (engl. digital twin) – virtualni, dinamički model fizičkog sustava koji
+u stvarnom vremenu reflektira stanje svog realnog pandana [1]. Ideja digitalnog
+blizanca izvorno je razvijena u kontekstu industrijske proizvodnje i aerospace
+industrije, no posljednjih godina sve se češće primjenjuje na urbanu razinu, gdje
+se cijeli grad promatra kao složeni kibernetičko-fizički sustav [2]. Takav pristup
+omogućuje simulaciju različitih scenarija, rano uočavanje anomalija, optimizaciju
+potrošnje resursa te pruža pouzdanu podlogu za planiranje infrastrukturnih zahvata.
+
+U ovom završnom radu razvijena je web aplikacija koja implementira digitalni
+blizanac centra grada Đakova. Sustav u stvarnom vremenu simulira i vizualizira
+podatke prikupljene iz pet kategorija senzora raspoređenih po gradskom prostoru:
+prometni senzori, senzori kvalitete zraka i okolišnih parametara, senzori
+parkirnih mjesta, upravljači semafora te mjerači potrošnje energije. Svi podaci
+prenose se prema klijentskoj aplikaciji putem WebSocket protokola i pohranuju u
+relacijsku bazu podataka uz automatiziranu politiku zadržavanja podataka. Korisniku
+su na raspolaganju interaktivna karta u stvarnom vremenu, statistička nadzorna
+ploča te administratorsko sučelje za upravljanje senzorima.
+
+Opisani sustav obuhvaća više međusobno povezanih tema: Internet of Things (IoT) i
+senzorske mreže kao izvor gradskih podataka, arhitekturu klijent-poslužitelj u
+modernim web aplikacijama, komunikaciju u stvarnom vremenu putem WebSocket
+protokola, upravljanje vremenskim nizovima podataka u relacijskim bazama,
+vizualizaciju geoprostornih podataka te koncepte pametnih gradova (engl. smart
+cities). Svaka od navedenih tema detaljno je obrađena u odgovarajućim poglavljima
+rada.
+
+
+1.1. Pregled literature
+───────────────────────
+
+Pojam digitalnog blizanca prvi je put opisao Michael Grieves 2002. godine kada
+je predložio ideju virtualnog modela koji prati stanje stvarnog proizvodnog sustava.
+U radu iz 2014. taj je pojam detaljnije razrađen i postaje sve poznatiji u
+tehnološkim krugovima [1]. Tao i suradnici (2018.) proširuju tu ideju na šire
+područje i opisuju digitalni blizanac kao sustav od tri dijela: stvarni objekt,
+njegov virtualni model i veza između njih koja prenosi podatke [3].
+
+Primjena digitalnih blizanaca na razini gradova istražena je u više radova. Batty
+(2018.) opisuje grad kao složeni sustav koji se stalno mijenja te zaključuje da
+digitalni blizanci mogu biti korisni alat za planiranje prometnih tokova, praćenje
+okoline i donošenje odluka o razvoju grada [2]. Dembski i suradnici (2020.) su
+prikazali konkretan primjer primjene digitalnog blizanca pri planiranju cestovne
+infrastrukture jednog njemačkog grada i pokazali da je takav pristup puno
+točniji od klasičnih metoda planiranja [4].
+
+Što se tiče IoT senzorskih mreža u pametnim gradovima, Zanella i suradnici (2014.)
+opisuju kako bi takav sustav trebao izgledati u praksi: od senzora koji mjere
+podatke, do mreže koja ih prenosi i softvera koji ih prikazuje krajnjem korisniku
+[5]. Jedan od češćih izazova u ovakvim sustavima je kako pohraniti veliku količinu
+podataka koje senzori neprestano generiraju. Jensen i suradnici (2010.) predlažu
+rješenje u vidu višerazinskog čuvanja podataka – sirovi podaci čuvaju se kratko,
+a sažeti prosjeci čuvaju se dulje – čime se štedi prostor bez gubitka bitnih
+informacija [6].
+
+WebSocket protokol, koji omogućuje stalnu vezu između poslužitelja i web preglednika,
+standardiziran je dokumentom RFC 6455 [7]. Pimentel i Nickerson (2012.) uspoređuju
+ovaj pristup s klasičnim načinom dohvaćanja podataka (HTTP polling) i zaključuju
+da je WebSocket znatno brži i učinkovitiji za sustave koji trebaju podatke u
+stvarnom vremenu [8]. Knjižnica Socket.IO, korištena u ovom radu, nadograđuje
+WebSocket protokol i dodaje mogućnosti poput automatskog ponovnog spajanja i
+razvrstavanja poruka po grupama [9].
+
+Za izradu korisničkog sučelja korišten je React, jedna od najpopularnijih JavaScript
+knjižnica za izgradnju web aplikacija [10]. Upravljanje podacima unutar aplikacije
+riješeno je pomoću knjižnice Zustand, koja nudi jednostavan i pregledan pristup
+pohrani podataka na strani klijenta [11]. Prikaz karte grada realiziran je pomoću
+Mapbox GL JS platforme, koja karti prikazuje podatke brzo i glatko korištenjem
+grafičke kartice [12].
+
+
+1.2. Struktura završnog rada
+─────────────────────────────
+
+Završni rad podijeljen je u sedam poglavlja, a svako od njih ukratko je opisano
+u nastavku.
+
+Poglavlje 2 – Teorijska osnova objašnjava osnovne pojmove vezane za digitalne
+blizance i pametne gradove. Opisuje se što je digitalni blizanac, kako se koristi
+u gradskom okruženju te kakvu ulogu imaju IoT senzori u prikupljanju podataka.
+
+Poglavlje 3 – Korištene tehnologije opisuje sve alate i tehnologije korištene
+pri izradi sustava. Na strani poslužitelja to su Node.js, Express i TypeScript,
+SQLite baza podataka te Socket.IO za komunikaciju u stvarnom vremenu. Na strani
+klijenta opisani su React 18, Zustand, Mapbox GL JS i Recharts.
+
+Poglavlje 4 – Arhitektura sustava prikazuje kako su dijelovi aplikacije međusobno
+povezani. Opisuje se kako podaci teku od simulatora do korisničkog sučelja,
+kakva je struktura API-ja i kako je organizirana baza podataka.
+
+Poglavlje 5 – Implementacija sustava opisuje najvažnije dijelove koda i kako su
+riješeni konkretni problemi: kako simulator generira podatke ovisno o dobu dana,
+kako WebSocket šalje podatke klijentima, kako radi administratorsko sučelje te
+kako se podaci prikazuju na karti i grafikonima.
+
+Poglavlje 6 – Testiranje sustava prikazuje na koji je način sustav testiran i
+kakvi su rezultati. Testirani su API pozivi, WebSocket komunikacija s više
+istovremenih korisnika te automatsko čišćenje starih podataka iz baze.
+
+Poglavlje 7 – Zaključak donosi pregled postignutih rezultata, opis nedostataka
+trenutnog rješenja i prijedloge za poboljšanje u budućnosti, kao što su spajanje
+na stvarne senzore, uvođenje strojnog učenja za predviđanje prometnih zagušenja
+te proširenje sustava na cijelo područje grada.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+LITERATURA (Poglavlje 1)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+[1]  M. Grieves, "Digital Twin: Manufacturing Excellence through Virtual Factory
+     Replication," White Paper, 2014.
+
+[2]  M. Batty, "Digital twins," Environment and Planning B: Urban Analytics and
+     City Science, vol. 45, no. 5, pp. 817–820, 2018.
+     DOI: 10.1177/2399808318796416
+
+[3]  F. Tao, H. Zhang, A. Liu, A. Y. C. Nee, "Digital Twin in Industry:
+     State-of-the-Art," IEEE Transactions on Industrial Informatics, vol. 15,
+     no. 4, pp. 2405–2415, 2018. DOI: 10.1109/TII.2018.2873186
+
+[4]  F. Dembski, U. Wössner, M. Letzgus, M. Ruddat, C. Yamu, "Urban Digital
+     Twins for Smart Cities and Citizens: The Case Study of Herrenberg, Germany,"
+     Sustainability, vol. 12, no. 6, pp. 2307, 2020.
+     DOI: 10.3390/su12062307
+
+[5]  A. Zanella, N. Bui, A. Castellani, L. Vangelista, M. Zorzi, "Internet of
+     Things for Smart Cities," IEEE Internet of Things Journal, vol. 1, no. 1,
+     pp. 22–32, 2014. DOI: 10.1109/JIOT.2014.2306328
+
+[6]  C. S. Jensen, T. B. Pedersen, C. Thomsen, "Multidimensional Databases and
+     Data Warehousing," Synthesis Lectures on Data Management, Morgan & Claypool,
+     2010.
+
+[7]  I. Fette, A. Melnikov, "The WebSocket Protocol," RFC 6455, Internet
+     Engineering Task Force (IETF), 2011.
+
+[8]  V. Pimentel, B. G. Nickerson, "Communicating and Displaying Real-Time Data
+     with WebSocket," IEEE Internet Computing, vol. 16, no. 4, pp. 45–53, 2012.
+     DOI: 10.1109/MIC.2012.64
+
+[9]  Socket.IO, "Socket.IO Documentation – How it works," [Online].
+     Dostupno: https://socket.io/docs/v4/how-it-works/ [Pristup: 2026.]
+
+[10] D. Abramov et al., "React – A JavaScript library for building user
+     interfaces," Meta Open Source, [Online].
+     Dostupno: https://react.dev [Pristup: 2026.]
+
+[11] P. Huxley, D. Kalinowski, "Zustand – Bear necessities for state management
+     in React," [Online]. Dostupno: https://github.com/pmndrs/zustand [Pristup: 2026.]
+
+[12] Mapbox, "Mapbox GL JS Documentation," [Online].
+     Dostupno: https://docs.mapbox.com/mapbox-gl-js/ [Pristup: 2026.]

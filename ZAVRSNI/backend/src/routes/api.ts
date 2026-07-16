@@ -1,12 +1,12 @@
 import express from 'express';
-import { sensorLocations } from '../services/simulation/locations.js';
+import { getSensorLocations } from '../services/simulation/locations.js';
 import { generateAllData } from '../services/simulation/dataGenerator.js';
 
 const router = express.Router();
 
 // Get all sensor locations
 router.get('/locations', (req, res) => {
-  res.json(sensorLocations);
+  res.json(getSensorLocations()); // Load fresh data
 });
 
 // Get current city data snapshot
