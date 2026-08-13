@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import fs from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { existsSync, mkdirSync } from 'fs';
@@ -90,12 +91,11 @@ export const getDatabaseStats = () => {
   
   try {
     // Get file size
-    const fs = require('fs');
     if (existsSync(DB_PATH)) {
       const fileStats = fs.statSync(DB_PATH);
       stats.size = fileStats.size;
     }
-    
+
     // Get row counts for each table
     const tables = ['sensor_readings', 'vehicle_positions', 'sensor_readings_5min', 
                     'sensor_readings_hourly', 'city_events', 'alerts', 'system_metrics'];

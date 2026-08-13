@@ -99,6 +99,21 @@ export const useCityStore = create<CityStore>((set) => ({
         }
       });
 
+      // Keep the live feed useful when every threshold is normal.
+      if (newEntries.length === 0 && data.traffic.length > 0) {
+        const traffic = data.traffic[0];
+        const loc = data.locations.find((location) => location.id === traffic.sensorId);
+        newEntries.push({
+          id: `${traffic.sensorId}-${Date.now()}-${Math.random()}`,
+          timestamp: Date.now(),
+          sensorId: traffic.sensorId,
+          sensorName: loc?.name ?? traffic.sensorId,
+          type: 'traffic',
+          status: 'normal',
+          message: `Normalan protok - ${traffic.vehicleCount} vozila, ${traffic.averageSpeed.toFixed(0)} km/h`,
+        });
+      }
+
       const newFeed =
         newEntries.length > 0
           ? [...newEntries, ...state.liveFeed].slice(0, MAX_FEED)

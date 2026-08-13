@@ -185,7 +185,10 @@ function CongestionPie() {
             {data.map((d) => <Cell key={d.name} fill={d.color} />)}
           </Pie>
           <Tooltip contentStyle={TOOLTIP_STYLE} labelStyle={LABEL_STYLE}
-            formatter={(v: number) => [`${v} senzora`, '']} />
+            formatter={(value) => {
+              const v = Number(value ?? 0);
+              return [`${v} senzora`, ''];
+            }} />
           <Legend wrapperStyle={{ color: '#9ca3af', fontSize: 11 }} />
         </PieChart>
       </ResponsiveContainer>
@@ -291,7 +294,10 @@ function ParkingPerSensor() {
             <RadialBar dataKey="value" label={{ position: 'insideStart', fill: '#9ca3af', fontSize: 10 }}
               isAnimationActive={false} />
             <Tooltip contentStyle={TOOLTIP_STYLE}
-              formatter={(v: number) => [`${v}%`, 'Popunjenost']} />
+              formatter={(value) => {
+                const v = Number(value ?? 0);
+                return [`${v}%`, 'Popunjenost'];
+              }} />
             <Legend wrapperStyle={{ color: '#9ca3af', fontSize: 11 }} />
           </RadialBarChart>
         </ResponsiveContainer>
@@ -328,7 +334,10 @@ function EnergyPerSensor() {
             <XAxis dataKey="name" tick={{ fill: '#6b7280', fontSize: 10 }} angle={-20} textAnchor="end" />
             <YAxis tick={{ fill: '#6b7280', fontSize: 10 }} unit=" kWh" />
             <Tooltip contentStyle={TOOLTIP_STYLE} labelStyle={LABEL_STYLE}
-              formatter={(v: number) => [`${v} kWh`, 'Potrošnja']} />
+              formatter={(value) => {
+                const v = Number(value ?? 0);
+                return [`${v} kWh`, 'Potrošnja'];
+              }} />
             <Bar dataKey="kWh" radius={[4,4,0,0]} isAnimationActive={false}>
               {data.map((d, i) => (
                 <Cell key={i} fill={d.tip === 'Rasvjeta' ? '#a855f7' : '#7c3aed'} />
@@ -348,7 +357,10 @@ function EnergyPerSensor() {
                 {byType.map((d) => <Cell key={d.name} fill={d.color} />)}
               </Pie>
               <Tooltip contentStyle={TOOLTIP_STYLE}
-                formatter={(v: number) => [`${v.toFixed(1)} kWh`, '']} />
+                formatter={(value) => {
+                  const v = Number(value ?? 0);
+                  return [`${v.toFixed(1)} kWh`, ''];
+                }} />
               <Legend wrapperStyle={{ color: '#9ca3af', fontSize: 11 }} />
             </PieChart>
           </ResponsiveContainer>
