@@ -14,7 +14,7 @@ import type {
   CityData,
 } from '../../types';
 
-const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || '***REMOVED***';
+const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN || '';
 mapboxgl.accessToken = MAPBOX_TOKEN;
 
 const ĐAKOVO_CENTER = { lng: 18.4103, lat: 45.3089 };
