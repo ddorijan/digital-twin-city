@@ -7,25 +7,35 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const SENSORS_FILE = join(__dirname, '../../../data/sensors.json');
 
-// Load sensors from JSON file
+// In-memory cache to avoid re-reading/parsing the file on every simulation
+// tick (it was being read up to 5x per connected client every 3 seconds).
+let cachedSensors: SensorLocation[] | null = null;
+
+// Load sensors from JSON file (cached after first read)
 export const loadSensors = (): SensorLocation[] => {
+  if (cachedSensors) return cachedSensors;
+
   try {
     if (!existsSync(SENSORS_FILE)) {
       console.warn('Sensors file not found, returning empty array');
-      return [];
+      cachedSensors = [];
+      return cachedSensors;
     }
     const data = readFileSync(SENSORS_FILE, 'utf-8');
-    return JSON.parse(data);
+    cachedSensors = JSON.parse(data);
+    return cachedSensors!;
   } catch (error) {
     console.error('Error loading sensors:', error);
-    return [];
+    cachedSensors = [];
+    return cachedSensors;
   }
 };
 
-// Save sensors to JSON file
+// Save sensors to JSON file and refresh the cache
 export const saveSensors = (sensors: SensorLocation[]): boolean => {
   try {
     writeFileSync(SENSORS_FILE, JSON.stringify(sensors, null, 2), 'utf-8');
+    cachedSensors = sensors;
     console.log('✅ Sensors saved successfully');
     return true;
   } catch (error) {

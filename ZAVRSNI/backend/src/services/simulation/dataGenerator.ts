@@ -7,6 +7,7 @@ import type {
   CityMetrics
 } from '../../types/index.js';
 import { getSensorLocations } from './locations.js';
+import { getCurrentWeather } from '../weather/weatherService.js';
 
 // Helper function to generate random value within range
 const randomInRange = (min: number, max: number): number => {
@@ -65,13 +66,16 @@ export const generateTrafficData = (): TrafficData[] => {
 export const generateEnvironmentData = (): EnvironmentData[] => {
   const sensorLocations = getSensorLocations(); // Load fresh data
   const envSensors = sensorLocations.filter(s => s.type === 'environment');
+  const weather = getCurrentWeather();
   
   return envSensors.map(sensor => {
-    const temperature = randomInRange(18, 28);
-    const humidity = randomInRange(40, 70);
-    const pm25 = randomInRange(10, 50);
-    const pm10 = randomInRange(20, 80);
-    const aqi = Math.round((pm25 + pm10) / 2);
+    // Real current Đakovo weather/air-quality as the base, with small
+    // per-sensor jitter so readings aren't identical across the city.
+    const temperature = weather.temperature + randomInRange(-1.2, 1.2);
+    const humidity = Math.min(100, Math.max(0, weather.humidity + randomInRange(-4, 4)));
+    const pm25 = Math.max(0, weather.pm25 + randomInRange(-3, 3));
+    const pm10 = Math.max(0, weather.pm10 + randomInRange(-5, 5));
+    const aqi = Math.max(0, Math.round(weather.aqi + randomInRange(-4, 4)));
     
     return {
       sensorId: sensor.id,
@@ -125,15 +129,44 @@ export const generateParkingData = (): ParkingData[] => {
   });
 };
 
-// Simulate traffic light data
+// Traffic light phase durations (seconds)
+const LIGHT_PHASES: Array<{ status: 'green' | 'yellow' | 'red'; duration: number }> = [
+  { status: 'green', duration: 30 },
+  { status: 'yellow', duration: 3 },
+  { status: 'red', duration: 25 },
+];
+const LIGHT_CYCLE_SECONDS = LIGHT_PHASES.reduce((sum, phase) => sum + phase.duration, 0);
+
+// Deterministic per-sensor offset so intersections aren't all synced together
+const offsetForSensor = (id: string): number => {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  }
+  return hash % LIGHT_CYCLE_SECONDS;
+};
+
+// Simulate traffic light data - deterministic time-based cycle so every
+// client/tick sees the same consistent phase instead of random flicker.
 export const generateTrafficLightData = (): TrafficLightData[] => {
   const sensorLocations = getSensorLocations(); // Load fresh data
   const lightSensors = sensorLocations.filter(s => s.type === 'traffic-light');
+  const nowSeconds = Math.floor(Date.now() / 1000);
   
   return lightSensors.map(sensor => {
-    const statuses: Array<'red' | 'yellow' | 'green'> = ['red', 'yellow', 'green'];
-    const status = statuses[Math.floor(Math.random() * statuses.length)];
-    const nextChangeIn = status === 'green' ? 30 : status === 'yellow' ? 3 : 25;
+    const t = (nowSeconds + offsetForSensor(sensor.id)) % LIGHT_CYCLE_SECONDS;
+
+    let elapsed = 0;
+    let status: 'red' | 'yellow' | 'green' = 'red';
+    let nextChangeIn = LIGHT_CYCLE_SECONDS;
+    for (const phase of LIGHT_PHASES) {
+      if (t < elapsed + phase.duration) {
+        status = phase.status;
+        nextChangeIn = elapsed + phase.duration - t;
+        break;
+      }
+      elapsed += phase.duration;
+    }
     
     return {
       sensorId: sensor.id,

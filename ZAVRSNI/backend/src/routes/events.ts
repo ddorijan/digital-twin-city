@@ -9,8 +9,24 @@ import {
   acknowledgeAlert,
   getRecentAlerts
 } from '../database/index.js';
+import type { CityEvent, Alert } from '../database/services/eventService.js';
+import { getIO } from '../websocket/index.js';
 
 const router = express.Router();
+
+const EVENT_TYPES = ['accident', 'road-work', 'flood', 'event', 'maintenance'] as const;
+const SEVERITIES = ['low', 'medium', 'high', 'critical'] as const;
+const EVENT_STATUSES = ['active', 'resolved', 'monitoring'] as const;
+const ALERT_SEVERITIES = ['info', 'warning', 'critical'] as const;
+
+const isEventType = (value: unknown): value is CityEvent['event_type'] =>
+  typeof value === 'string' && (EVENT_TYPES as readonly string[]).includes(value);
+const isSeverity = (value: unknown): value is NonNullable<CityEvent['severity']> =>
+  (SEVERITIES as readonly string[]).includes(value as string);
+const isEventStatus = (value: unknown): value is NonNullable<CityEvent['status']> =>
+  (EVENT_STATUSES as readonly string[]).includes(value as string);
+const isAlertSeverity = (value: unknown): value is NonNullable<Alert['severity']> =>
+  (ALERT_SEVERITIES as readonly string[]).includes(value as string);
 
 // ============================================================================
 // EVENTS ENDPOINTS
@@ -60,8 +76,23 @@ router.post('/', (req, res) => {
   try {
     const { event_type, title, description, lat, lng, severity, status, affected_area, metadata } = req.body;
     
-    if (!event_type || !title) {
-      return res.status(400).json({ error: 'event_type and title are required' });
+    if (!isEventType(event_type)) {
+      return res.status(400).json({ error: `event_type must be one of: ${EVENT_TYPES.join(', ')}` });
+    }
+    if (typeof title !== 'string' || !title.trim()) {
+      return res.status(400).json({ error: 'title is required' });
+    }
+    if (typeof lat !== 'number' || !Number.isFinite(lat)) {
+      return res.status(400).json({ error: 'lat must be a finite number' });
+    }
+    if (typeof lng !== 'number' || !Number.isFinite(lng)) {
+      return res.status(400).json({ error: 'lng must be a finite number' });
+    }
+    if (severity !== undefined && !isSeverity(severity)) {
+      return res.status(400).json({ error: `severity must be one of: ${SEVERITIES.join(', ')}` });
+    }
+    if (status !== undefined && !isEventStatus(status)) {
+      return res.status(400).json({ error: `status must be one of: ${EVENT_STATUSES.join(', ')}` });
     }
     
     const eventId = createEvent({
@@ -74,6 +105,22 @@ router.post('/', (req, res) => {
       status,
       affected_area,
       metadata
+    });
+
+    // Broadcast so every connected client shares the same incident state,
+    // instead of it only existing in the browser tab that created it.
+    getIO()?.emit('city-event', {
+      action: 'created',
+      event: {
+        id: eventId,
+        event_type,
+        title,
+        description,
+        lat,
+        lng,
+        severity: severity ?? 'low',
+        status: status ?? 'active',
+      },
     });
     
     res.status(201).json({
@@ -92,12 +139,17 @@ router.post('/', (req, res) => {
  */
 router.put('/:id/resolve', (req, res) => {
   try {
-    const eventId = parseInt(req.params.id);
+    const eventId = parseInt(req.params.id, 10);
+    if (Number.isNaN(eventId)) {
+      return res.status(400).json({ error: 'id must be a number' });
+    }
     const success = resolveEvent(eventId);
     
     if (!success) {
       return res.status(404).json({ error: 'Event not found' });
     }
+
+    getIO()?.emit('city-event', { action: 'resolved', id: eventId });
     
     res.json({
       message: 'Event resolved successfully',
@@ -125,7 +177,8 @@ router.get('/alerts', (req, res) => {
     if (unacknowledged === 'true') {
       alerts = getUnacknowledgedAlerts();
     } else {
-      const maxLimit = limit ? parseInt(limit as string) : 50;
+      const parsedLimit = limit ? parseInt(limit as string, 10) : 50;
+      const maxLimit = Number.isNaN(parsedLimit) ? 50 : parsedLimit;
       alerts = getRecentAlerts(maxLimit);
     }
     
@@ -147,8 +200,14 @@ router.post('/alerts', (req, res) => {
   try {
     const { sensor_id, alert_type, severity, message, threshold_value, actual_value, metadata } = req.body;
     
-    if (!alert_type || !message) {
-      return res.status(400).json({ error: 'alert_type and message are required' });
+    if (typeof alert_type !== 'string' || !alert_type.trim()) {
+      return res.status(400).json({ error: 'alert_type is required' });
+    }
+    if (typeof message !== 'string' || !message.trim()) {
+      return res.status(400).json({ error: 'message is required' });
+    }
+    if (severity !== undefined && !isAlertSeverity(severity)) {
+      return res.status(400).json({ error: `severity must be one of: ${ALERT_SEVERITIES.join(', ')}` });
     }
     
     const alertId = createAlert({
@@ -177,7 +236,10 @@ router.post('/alerts', (req, res) => {
  */
 router.put('/alerts/:id/acknowledge', (req, res) => {
   try {
-    const alertId = parseInt(req.params.id);
+    const alertId = parseInt(req.params.id, 10);
+    if (Number.isNaN(alertId)) {
+      return res.status(400).json({ error: 'id must be a number' });
+    }
     const { acknowledged_by } = req.body;
     
     const success = acknowledgeAlert(alertId, acknowledged_by);

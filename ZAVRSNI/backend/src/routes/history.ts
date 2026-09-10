@@ -7,8 +7,16 @@ import {
   getSensorStats,
   getReadingCount
 } from '../database/index.js';
+import { getRetentionPolicy } from '../config/retention.js';
 
 const router = express.Router();
+
+// Parses a query param as an integer; returns fallback if absent, null if invalid
+const parseIntParam = (value: unknown, fallback: number): number | null => {
+  if (value === undefined) return fallback;
+  const parsed = parseInt(value as string, 10);
+  return Number.isNaN(parsed) ? null : parsed;
+};
 
 /**
  * GET /api/history/sensor/:sensorId
@@ -21,9 +29,13 @@ router.get('/sensor/:sensorId', (req, res) => {
     
     // Default to last 24 hours if not specified
     const now = Date.now();
-    const fromTimestamp = from ? parseInt(from as string) : Math.floor(now / 1000) - 86400;
-    const toTimestamp = to ? parseInt(to as string) : Math.floor(now / 1000);
-    const maxLimit = limit ? parseInt(limit as string) : 1000;
+    const fromTimestamp = parseIntParam(from, Math.floor(now / 1000) - 86400);
+    const toTimestamp = parseIntParam(to, Math.floor(now / 1000));
+    const maxLimit = parseIntParam(limit, 1000);
+
+    if (fromTimestamp === null || toTimestamp === null || maxLimit === null) {
+      return res.status(400).json({ error: 'from, to, and limit must be valid numbers' });
+    }
     
     // If time range is > 7 days, use aggregated data
     const daysDiff = (toTimestamp - fromTimestamp) / 86400;
@@ -31,8 +43,10 @@ router.get('/sensor/:sensorId', (req, res) => {
     let data;
     if (aggregation === '5min' || (daysDiff > 7 && daysDiff <= 30)) {
       data = getAggregatedReadings(sensorId, fromTimestamp, toTimestamp, '5min');
-    } else if (aggregation === 'hourly' || daysDiff > 30) {
+    } else if (aggregation === 'hourly' || (daysDiff > 30 && daysDiff <= 90)) {
       data = getAggregatedReadings(sensorId, fromTimestamp, toTimestamp, 'hourly');
+    } else if (aggregation === 'daily' || daysDiff > 90) {
+      data = getAggregatedReadings(sensorId, fromTimestamp, toTimestamp, 'daily');
     } else {
       data = getSensorReadings(sensorId, fromTimestamp, toTimestamp, maxLimit);
     }
@@ -42,7 +56,7 @@ router.get('/sensor/:sensorId', (req, res) => {
       from: fromTimestamp,
       to: toTimestamp,
       count: data.length,
-      aggregation: daysDiff > 30 ? 'hourly' : daysDiff > 7 ? '5min' : 'raw',
+      aggregation: daysDiff > 90 ? 'daily' : daysDiff > 30 ? 'hourly' : daysDiff > 7 ? '5min' : 'raw',
       data
     });
   } catch (error) {
@@ -81,9 +95,13 @@ router.get('/type/:sensorType', (req, res) => {
     const { from, to, limit } = req.query;
     
     const now = Date.now();
-    const fromTimestamp = from ? parseInt(from as string) : Math.floor(now / 1000) - 86400;
-    const toTimestamp = to ? parseInt(to as string) : Math.floor(now / 1000);
-    const maxLimit = limit ? parseInt(limit as string) : 5000;
+    const fromTimestamp = parseIntParam(from, Math.floor(now / 1000) - 86400);
+    const toTimestamp = parseIntParam(to, Math.floor(now / 1000));
+    const maxLimit = parseIntParam(limit, 5000);
+
+    if (fromTimestamp === null || toTimestamp === null || maxLimit === null) {
+      return res.status(400).json({ error: 'from, to, and limit must be valid numbers' });
+    }
     
     const data = getReadingsByType(sensorType, fromTimestamp, toTimestamp, maxLimit);
     
@@ -108,14 +126,16 @@ router.get('/stats', (req, res) => {
   try {
     const stats = getSensorStats();
     const totalReadings = getReadingCount();
+    const policy = getRetentionPolicy();
     
     res.json({
       total_readings: totalReadings,
       by_type: stats,
       storage_info: {
-        raw_data_retention_days: 7,
-        aggregated_5min_retention_days: 30,
-        aggregated_hourly_retention_days: 90
+        raw_data_retention_days: policy.RAW_DATA_DAYS,
+        aggregated_5min_retention_days: policy.AGGREGATED_5MIN_DAYS,
+        aggregated_hourly_retention_days: policy.AGGREGATED_HOURLY_DAYS,
+        aggregated_daily_retention_years: policy.AGGREGATED_DAILY_YEARS
       }
     });
   } catch (error) {
@@ -137,18 +157,27 @@ router.get('/comparison', (req, res) => {
         error: 'Missing required parameters: sensorId, period1Start, period1End, period2Start, period2End' 
       });
     }
+
+    const p1Start = parseIntParam(period1Start, NaN);
+    const p1End = parseIntParam(period1End, NaN);
+    const p2Start = parseIntParam(period2Start, NaN);
+    const p2End = parseIntParam(period2End, NaN);
+
+    if (p1Start === null || p1End === null || p2Start === null || p2End === null) {
+      return res.status(400).json({ error: 'period bounds must be valid numbers' });
+    }
     
     const period1Data = getSensorReadings(
       sensorId as string,
-      parseInt(period1Start as string),
-      parseInt(period1End as string),
+      p1Start,
+      p1End,
       10000
     );
     
     const period2Data = getSensorReadings(
       sensorId as string,
-      parseInt(period2Start as string),
-      parseInt(period2End as string),
+      p2Start,
+      p2End,
       10000
     );
     

@@ -275,8 +275,8 @@
   {
     "id": "traffic-030",
     "name": "Knez Branimir",
-    "lat": 45.312232,
-    "lng": 18.24026,
+    "lat": 45.3125,
+    "lng": 18.3999,
     "type": "traffic"
   },
   {
@@ -292,5 +292,229 @@
     "lat": 45.311732,
     "lng": 18.400165,
     "type": "traffic"
+  },
+  {
+    "id": "traffic-033",
+    "name": "Vatroslava Lisinskog",
+    "lat": 45.31297,
+    "lng": 18.42312,
+    "type": "traffic"
+  },
+  {
+    "id": "traffic-034",
+    "name": "Pavićeva ulica",
+    "lat": 45.30245,
+    "lng": 18.42385,
+    "type": "traffic"
+  },
+  {
+    "id": "traffic-035",
+    "name": "Ivice Račana",
+    "lat": 45.31792,
+    "lng": 18.41306,
+    "type": "traffic"
+  },
+  {
+    "id": "traffic-036",
+    "name": "Vladimira Nazora",
+    "lat": 45.3154,
+    "lng": 18.4145,
+    "type": "traffic"
+  },
+  {
+    "id": "env-001",
+    "name": "Strossmayerov park",
+    "lat": 45.3060,
+    "lng": 18.4095,
+    "type": "environment"
+  },
+  {
+    "id": "energy-001",
+    "name": "Strossmayerov park",
+    "lat": 45.3045,
+    "lng": 18.4110,
+    "type": "energy"
+  },
+  {
+    "id": "env-002",
+    "name": "Mali park",
+    "lat": 45.315,
+    "lng": 18.416,
+    "type": "environment"
+  },
+  {
+    "id": "energy-002",
+    "name": "Mali park",
+    "lat": 45.3154,
+    "lng": 18.415,
+    "type": "energy"
+  },
+  {
+    "id": "env-003",
+    "name": "Park pobjede",
+    "lat": 45.313,
+    "lng": 18.4206,
+    "type": "environment"
+  },
+  {
+    "id": "energy-003",
+    "name": "Park pobjede",
+    "lat": 45.3133,
+    "lng": 18.4211,
+    "type": "energy"
+  },
+  {
+    "id": "env-004",
+    "name": "Park Mirka Kladarića",
+    "lat": 45.3117,
+    "lng": 18.4051,
+    "type": "environment"
+  },
+  {
+    "id": "energy-004",
+    "name": "Park Mirka Kladarića",
+    "lat": 45.312,
+    "lng": 18.4055,
+    "type": "energy"
+  },
+  {
+    "id": "light-004",
+    "name": "Trg dr. Franje Tuđmana",
+    "lat": 45.31003,
+    "lng": 18.40958,
+    "type": "traffic-light"
+  },
+  {
+    "id": "light-005",
+    "name": "Ulica Petra Preradovića - centar",
+    "lat": 45.30437,
+    "lng": 18.41202,
+    "type": "traffic-light"
+  },
+  {
+    "id": "light-006",
+    "name": "Josipa Kozarca-Kranjčevića",
+    "lat": 45.31472,
+    "lng": 18.41699,
+    "type": "traffic-light"
+  },
+  {
+    "id": "light-007",
+    "name": "Franje Račkog-Kralja Zvonimira",
+    "lat": 45.31043,
+    "lng": 18.40045,
+    "type": "traffic-light"
+  },
+  {
+    "id": "traffic-037",
+    "name": "Ulica Matije Gupca",
+    "lat": 45.30929,
+    "lng": 18.41878,
+    "type": "traffic"
+  },
+  {
+    "id": "traffic-038",
+    "name": "Ulica Stjepana Radića",
+    "lat": 45.30897,
+    "lng": 18.40732,
+    "type": "traffic"
+  },
+  {
+    "id": "traffic-039",
+    "name": "Ulica kneza Trpimira",
+    "lat": 45.31216,
+    "lng": 18.39867,
+    "type": "traffic"
+  },
+  {
+    "id": "traffic-040",
+    "name": "Ulica biskupa Ćirila Kosa",
+    "lat": 45.31228,
+    "lng": 18.40456,
+    "type": "traffic"
+  },
+  {
+    "id": "traffic-041",
+    "name": "Ulica Matije Antuna Reljkovića",
+    "lat": 45.31353,
+    "lng": 18.40768,
+    "type": "traffic"
+  },
+  {
+    "id": "traffic-042",
+    "name": "Ulica Ivana Gundulića",
+    "lat": 45.30627,
+    "lng": 18.42326,
+    "type": "traffic"
+  },
+  {
+    "id": "traffic-043",
+    "name": "Ulica Augusta Šenoe",
+    "lat": 45.30926,
+    "lng": 18.42096,
+    "type": "traffic"
+  },
+  {
+    "id": "traffic-044",
+    "name": "Ulica Ivana Gorana Kovačića",
+    "lat": 45.31259,
+    "lng": 18.42031,
+    "type": "traffic"
+  },
+  {
+    "id": "traffic-045",
+    "name": "Ulica Dragutina Domjanića",
+    "lat": 45.31176,
+    "lng": 18.42693,
+    "type": "traffic"
+  },
+  {
+    "id": "traffic-046",
+    "name": "D46 (državna cesta)",
+    "lat": 45.30105,
+    "lng": 18.42548,
+    "type": "traffic"
+  },
+  {
+    "id": "traffic-047",
+    "name": "Ulica Nikole Jurja Tordinca",
+    "lat": 45.29481,
+    "lng": 18.39831,
+    "type": "traffic"
+  },
+  {
+    "id": "traffic-048",
+    "name": "Jakova Gotovca",
+    "lat": 45.32135,
+    "lng": 18.41032,
+    "type": "traffic"
+  },
+  {
+    "id": "traffic-049",
+    "name": "Ulica Božidara Adžije",
+    "lat": 45.31788,
+    "lng": 18.39818,
+    "type": "traffic"
+  },
+  {
+    "id": "traffic-050",
+    "name": "Ulica Petra Preradovića - jug",
+    "lat": 45.29306,
+    "lng": 18.41007,
+    "type": "traffic"
+  },
+  {
+    "id": "parking-010",
+    "name": "Kolodvor",
+    "lat": 45.3132,
+    "lng": 18.421,
+    "type": "parking"
+  },
+  {
+    "id": "parking-011",
+    "name": "Industrijska zona - Pavićeva",
+    "lat": 45.3024,
+    "lng": 18.4238,
+    "type": "parking"
   }
 ]

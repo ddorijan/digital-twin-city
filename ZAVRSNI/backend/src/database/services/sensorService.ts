@@ -33,7 +33,11 @@ export const saveSensorReadings = (readings: SensorReading[], sensorType: string
       insert.run(
         reading.sensorId,
         sensorType,
-        reading.timestamp,
+        // Store as unix seconds - every query/aggregation/retention cutoff in
+        // this file and cleanupService.ts assumes seconds, but `reading.timestamp`
+        // is `Date.now()` (milliseconds). Without this conversion, from/to
+        // filters never match and old raw rows are never cleaned up.
+        Math.floor(reading.timestamp / 1000),
         JSON.stringify(reading)
       );
     }
@@ -139,10 +143,14 @@ export const getAggregatedReadings = (
   sensorId: string,
   fromTimestamp: number,
   toTimestamp: number,
-  interval: '5min' | 'hourly' = 'hourly'
+  interval: '5min' | 'hourly' | 'daily' = 'hourly'
 ) => {
   const db = getDatabase();
-  const table = interval === '5min' ? 'sensor_readings_5min' : 'sensor_readings_hourly';
+  const table = interval === '5min'
+    ? 'sensor_readings_5min'
+    : interval === 'daily'
+      ? 'sensor_readings_daily'
+      : 'sensor_readings_hourly';
   
   const stmt = db.prepare(`
     SELECT interval_start as timestamp, avg_value, min_value, max_value, count, data

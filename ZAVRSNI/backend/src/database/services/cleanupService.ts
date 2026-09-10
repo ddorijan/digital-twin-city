@@ -81,6 +81,43 @@ export const aggregateToHourly = (): number => {
 };
 
 /**
+ * Aggregate hourly data into daily intervals (long-term retention)
+ */
+export const aggregateToDaily = (): number => {
+  console.log('📊 Aggregating data to daily intervals...');
+  const db = getDatabase();
+  const policy = getRetentionPolicy();
+  
+  // Calculate timestamp for 90 days ago
+  const cutoffTimestamp = Math.floor(Date.now() / 1000) - (policy.AGGREGATED_HOURLY_DAYS * 86400);
+  
+  // Aggregate to daily (86400 seconds)
+  const stmt = db.prepare(`
+    INSERT INTO sensor_readings_daily (sensor_id, sensor_type, interval_start, avg_value, min_value, max_value, count, data)
+    SELECT 
+      sensor_id,
+      sensor_type,
+      (interval_start / 86400) * 86400 as interval_start,
+      AVG(avg_value) as avg_value,
+      MIN(min_value) as min_value,
+      MAX(max_value) as max_value,
+      SUM(count) as count,
+      NULL as data
+    FROM sensor_readings_hourly
+    WHERE interval_start < ?
+      AND sensor_id NOT IN (
+        SELECT sensor_id FROM sensor_readings_daily WHERE interval_start >= (? - 86400)
+      )
+    GROUP BY sensor_id, (interval_start / 86400) * 86400
+  `);
+  
+  const result = stmt.run(cutoffTimestamp, cutoffTimestamp);
+  
+  console.log(`✅ Aggregated ${result.changes} daily intervals`);
+  return result.changes;
+};
+
+/**
  * Delete old aggregated data based on retention policy
  */
 export const deleteOldAggregatedData = (): number => {
@@ -103,6 +140,13 @@ export const deleteOldAggregatedData = (): number => {
   const resultHourly = stmtHourly.run(cutoffHourly);
   totalDeleted += resultHourly.changes;
   console.log(`  Deleted ${resultHourly.changes} old hourly records`);
+  
+  // Delete old daily aggregated data (older than AGGREGATED_DAILY_YEARS)
+  const cutoffDaily = Math.floor(Date.now() / 1000) - (policy.AGGREGATED_DAILY_YEARS * 365 * 86400);
+  const stmtDaily = db.prepare('DELETE FROM sensor_readings_daily WHERE interval_start < ?');
+  const resultDaily = stmtDaily.run(cutoffDaily);
+  totalDeleted += resultDaily.changes;
+  console.log(`  Deleted ${resultDaily.changes} old daily records`);
   
   return totalDeleted;
 };
@@ -127,6 +171,7 @@ export const runCleanupJob = async (): Promise<void> => {
     // Step 2: Aggregate old data
     const aggregated5min = aggregateToFiveMinutes();
     const aggregatedHourly = aggregateToHourly();
+    const aggregatedDaily = aggregateToDaily();
     
     // Step 3: Delete old raw sensor data
     const rawCutoff = Math.floor(Date.now() / 1000) - (policy.RAW_DATA_DAYS * 86400);

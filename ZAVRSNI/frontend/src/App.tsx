@@ -59,7 +59,7 @@ function FeedEntry({ entry }: { entry: LiveFeedEntry }) {
   const border = entry.status === 'critical' ? 'border-red-800' : entry.status === 'warning' ? 'border-yellow-800' : 'border-green-800';
 
   const typeIcon: Record<string, string> = {
-    traffic: '🚗', environment: '🌿', parking: '🅿️', energy: '⚡', 'traffic-light': '🚦',
+    traffic: '🚗', environment: '🌿', parking: '🅿️', energy: '⚡', 'traffic-light': '🚦', incident: '🚨',
   };
   const ts = new Date(entry.timestamp);
   const timeStr = `${ts.getHours().toString().padStart(2, '0')}:${ts.getMinutes().toString().padStart(2, '0')}:${ts.getSeconds().toString().padStart(2, '0')}`;
@@ -236,13 +236,10 @@ function App() {
             path="/admin"
             element={isAuthenticated ? <AdminDashboard /> : <AdminLogin />}
           />
-
           {/* Sensor list */}
           <Route path="/data" element={<SensorList />} />
-
           {/* Statistics */}
           <Route path="/stats" element={<StatsDashboard />} />
-
           {/* Main map route */}
           <Route
             path="/"
@@ -260,16 +257,14 @@ function App() {
                   <div className="mb-4">
                     <Dashboard />
                   </div>
-
                   {/* Sensor type filter */}
                   <FilterBar />
-
                   {/* Map + Sidebar */}
                   <div className="flex gap-4 h-[620px]">
                     <ErrorBoundary
                       fallback={
                         <div className="flex-1 bg-gray-800 rounded-xl p-8 text-center flex flex-col items-center justify-center border border-gray-700">
-                          <p className="text-red-400 mb-2">❌ Greška pri učitavanju mape</p>
+                          <p className="text-red-400 mb-2"> Greška pri učitavanju mape</p>
                           <p className="text-sm text-gray-400">Provjeri Mapbox token u .env fajlu</p>
                         </div>
                       }
@@ -278,7 +273,6 @@ function App() {
                         <RealMapView />
                       </div>
                     </ErrorBoundary>
-
                     <LiveFeedSidebar />
                   </div>
                 </>

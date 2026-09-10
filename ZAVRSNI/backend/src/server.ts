@@ -1,29 +1,31 @@
+import 'dotenv/config';
 import express from 'express';
 import { createServer } from 'http';
 import cors from 'cors';
+import helmet from 'helmet';
 import apiRouter from './routes/api.js';
 import adminRouter from './routes/admin.js';
 import historyRouter from './routes/history.js';
 import eventsRouter from './routes/events.js';
 import { setupWebSocket } from './websocket/index.js';
 import { initDatabase, getDatabaseStats, scheduleCleanupJob } from './database/index.js';
+import { CORS_ORIGIN } from './config/env.js';
+import { startWeatherPolling } from './services/weather/weatherService.js';
 
 const app = express();
 const httpServer = createServer(app);
 const PORT = process.env.PORT || 3001;
 
-// Initialize database
-console.log('\n🗄️  Initializing database...');
+console.log('\n Initializing database...');
 initDatabase();
 
-// Schedule automatic cleanup job
 scheduleCleanupJob();
+startWeatherPolling();
 
-// Middleware
-app.use(cors());
+app.use(helmet());
+app.use(cors({ origin: CORS_ORIGIN }));
 app.use(express.json());
 
-// Routes
 app.get('/', (req, res) => {
   const dbStats = getDatabaseStats();
   res.json({

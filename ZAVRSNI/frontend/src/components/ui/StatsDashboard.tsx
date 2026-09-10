@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useCityStore } from '../../store/cityStore';
 import {
   LineChart, Line,
@@ -8,7 +9,8 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer,
 } from 'recharts';
-import { TrendingUp, Wind, Zap, Car, ParkingSquare, Activity } from 'lucide-react';
+import { TrendingUp, Wind, Zap, Car, ParkingSquare, Activity, History } from 'lucide-react';
+import { fetchSensorHistory, type HistoryPoint } from '../../services/historyApi';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -370,6 +372,113 @@ function EnergyPerSensor() {
   );
 }
 
+// ── Sensor history / time-travel ─────────────────────────────────────────────
+
+const RANGE_OPTIONS = [
+  { label: 'Zadnjih 24h', seconds: 24 * 3600 },
+  { label: 'Zadnjih 7 dana', seconds: 7 * 24 * 3600 },
+] as const;
+
+function SensorHistoryExplorer() {
+  const cityData = useCityStore((s) => s.cityData);
+  const sensors = (cityData?.locations ?? []).filter((l) => l.type !== 'traffic-light');
+
+  const [sensorId, setSensorId] = useState<string>('');
+  const [rangeSeconds, setRangeSeconds] = useState<number>(RANGE_OPTIONS[0].seconds);
+  const [points, setPoints] = useState<HistoryPoint[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  // Default to the first available sensor once data arrives
+  useEffect(() => {
+    if (!sensorId && sensors.length > 0) setSensorId(sensors[0].id);
+  }, [sensors, sensorId]);
+
+  useEffect(() => {
+    if (!sensorId) return;
+    const sensor = sensors.find((s) => s.id === sensorId);
+    if (!sensor) return;
+
+    let cancelled = false;
+    setLoading(true);
+    const toSeconds = Math.floor(Date.now() / 1000);
+    const fromSeconds = toSeconds - rangeSeconds;
+
+    fetchSensorHistory(sensorId, sensor.type, fromSeconds, toSeconds).then((data) => {
+      if (!cancelled) {
+        setPoints(data);
+        setLoading(false);
+      }
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sensorId, rangeSeconds]);
+
+  const sensor = sensors.find((s) => s.id === sensorId);
+  const unit = sensor?.type === 'traffic' ? 'vozila'
+    : sensor?.type === 'environment' ? 'AQI'
+    : sensor?.type === 'energy' ? 'kWh'
+    : sensor?.type === 'parking' ? '%'
+    : '';
+
+  const chartData = points.map((p) => ({
+    time: new Date(p.timestamp).toLocaleString('hr-HR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }),
+    value: p.value,
+  }));
+
+  return (
+    <Card>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+        <SectionTitle icon={History} title="Povijest senzora" color="text-blue-400" />
+        <div className="flex items-center gap-2">
+          <select
+            value={sensorId}
+            onChange={(e) => setSensorId(e.target.value)}
+            className="bg-gray-900 border border-gray-700 text-gray-200 text-xs rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          >
+            {sensors.map((s) => (
+              <option key={s.id} value={s.id}>{s.name}</option>
+            ))}
+          </select>
+          <div className="flex gap-1">
+            {RANGE_OPTIONS.map((opt) => (
+              <button
+                key={opt.seconds}
+                onClick={() => setRangeSeconds(opt.seconds)}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                  rangeSeconds === opt.seconds
+                    ? 'bg-blue-500/20 border-blue-400 text-blue-300'
+                    : 'border-gray-700 text-gray-400 hover:text-gray-200'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {loading ? (
+        <NoData />
+      ) : chartData.length === 0 ? (
+        <div className="flex-1 flex items-center justify-center h-40">
+          <p className="text-gray-600 text-sm">Nema povijesnih podataka za odabrani period.</p>
+        </div>
+      ) : (
+        <ResponsiveContainer width="100%" height={240}>
+          <LineChart data={chartData} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+            <CartesianGrid stroke="#1f2937" strokeDasharray="3 3" />
+            <XAxis dataKey="time" tick={{ fill: '#6b7280', fontSize: 10 }} interval="preserveStartEnd" />
+            <YAxis tick={{ fill: '#6b7280', fontSize: 10 }} unit={unit ? ` ${unit}` : ''} />
+            <Tooltip contentStyle={TOOLTIP_STYLE} labelStyle={LABEL_STYLE} />
+            <Line type="monotone" dataKey="value" stroke="#3b82f6" strokeWidth={2}
+              dot={false} name={unit} isAnimationActive={false} />
+          </LineChart>
+        </ResponsiveContainer>
+      )}
+    </Card>
+  );
+}
+
 // ── Main export ───────────────────────────────────────────────────────────────
 
 export const StatsDashboard = () => {
@@ -395,6 +504,15 @@ export const StatsDashboard = () => {
           Trendovi metrika (real-time)
         </h1>
         <MetricsOverTime />
+      </section>
+
+      {/* Povijest / time-travel */}
+      <section>
+        <h1 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+          <History className="w-5 h-5 text-blue-400" />
+          Povijest senzora
+        </h1>
+        <SensorHistoryExplorer />
       </section>
 
       {/* Promet */}

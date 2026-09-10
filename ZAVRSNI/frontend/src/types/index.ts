@@ -1,6 +1,7 @@
 // Frontend types matching backend
 export type SensorStatus = 'normal' | 'warning' | 'critical';
 export type SensorType = 'traffic' | 'environment' | 'energy' | 'parking' | 'traffic-light';
+export type LiveFeedType = SensorType | 'incident';
 
 export interface SensorLocation {
   id: string;
@@ -75,7 +76,7 @@ export interface LiveFeedEntry {
   timestamp: number;
   sensorId: string;
   sensorName: string;
-  type: SensorType;
+  type: LiveFeedType;
   status: SensorStatus;
   message: string;
 }

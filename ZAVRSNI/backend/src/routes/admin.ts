@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import rateLimit from 'express-rate-limit';
 import { authMiddleware, login, logout } from '../middleware/auth.js';
 import {
   getAllSensors,
@@ -12,8 +13,36 @@ import type { SensorLocation } from '../types/index.js';
 
 const router = Router();
 
+const SENSOR_TYPES = new Set(['traffic', 'environment', 'energy', 'parking', 'traffic-light']);
+
+// Reject malformed sensor payloads before they reach storage/DB
+const validateSensor = (body: any): string | null => {
+  if (!body || typeof body !== 'object') return 'Invalid request body';
+  if (typeof body.id !== 'string' || !body.id.trim()) return 'id is required';
+  if (typeof body.name !== 'string' || !body.name.trim()) return 'name is required';
+  if (typeof body.lat !== 'number' || !Number.isFinite(body.lat) || body.lat < -90 || body.lat > 90) {
+    return 'lat must be a finite number between -90 and 90';
+  }
+  if (typeof body.lng !== 'number' || !Number.isFinite(body.lng) || body.lng < -180 || body.lng > 180) {
+    return 'lng must be a finite number between -180 and 180';
+  }
+  if (typeof body.type !== 'string' || !SENSOR_TYPES.has(body.type)) {
+    return `type must be one of: ${[...SENSOR_TYPES].join(', ')}`;
+  }
+  return null;
+};
+
+// Limit brute-force attempts against the admin password
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many login attempts, please try again later' }
+});
+
 // Auth routes (no middleware needed)
-router.post('/login', login);
+router.post('/login', loginLimiter, login);
 router.post('/logout', logout);
 
 // Protected admin routes
@@ -58,12 +87,12 @@ router.get('/sensors/:id', authMiddleware, (req: Request, res: Response) => {
 router.post('/sensors', authMiddleware, (req: Request, res: Response) => {
   try {
     const sensor: SensorLocation = req.body;
-    
-    // Validation
-    if (!sensor.id || !sensor.name || !sensor.lat || !sensor.lng || !sensor.type) {
+
+    const validationError = validateSensor(sensor);
+    if (validationError) {
       return res.status(400).json({
         success: false,
-        message: 'Missing required fields'
+        message: validationError
       });
     }
     
@@ -91,6 +120,15 @@ router.post('/sensors', authMiddleware, (req: Request, res: Response) => {
 router.put('/sensors/:id', authMiddleware, (req: Request, res: Response) => {
   try {
     const sensor: SensorLocation = req.body;
+
+    const validationError = validateSensor(sensor);
+    if (validationError) {
+      return res.status(400).json({
+        success: false,
+        message: validationError
+      });
+    }
+
     const success = updateSensor(req.params.id, sensor);
     
     if (success) {

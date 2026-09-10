@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
-import { X, AlertTriangle, CheckCircle, XCircle } from 'lucide-react';
+import { X, AlertTriangle, CheckCircle, XCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { useCityStore } from '../../store/cityStore';
+import { websocketService } from '../../services/websocket';
+import { fetchActiveIncidents, createIncidentEvent, resolveIncidentEvent } from '../../services/eventsApi';
 import {
   tickCars, getSmartLights, makeInitialCars, fetchAllRoutes, applyRoutes,
-  fetchParkingRoute, applyParkingRoute, fetchIncidentDetour, applyIncidentDetour, startIncidentReroutes, assignIncidentReroutes, clearIncidentReroutes,
-  selectTrafficIncidentLocation, type SimCar, type TrafficIncident,
+  fetchParkingRoute, applyParkingRoute, rebuildRoutesAvoidingIncidents, applyAvoidingRoutes,
+  selectTrafficIncidentLocation, fetchIncidentDetour, applyIncidentDetour, getDetourDestination,
+  nearbyRoadVias, clearAllIncidents, type SimCar, type TrafficIncident, type RouteInfo,
 } from '../../services/carSimulation';
 import type {
   SensorLocation,
@@ -248,6 +251,10 @@ export const RealMapView = () => {
   const fetchingParkingRef = useRef<Set<string>>(new Set());
   const fetchingDetourRef = useRef<Set<string>>(new Set());
   const incidentsRef = useRef<TrafficIncident[]>([]);
+  const originalRoutesRef = useRef<RouteInfo[]>([]);
+  const activeRoutesRef = useRef<RouteInfo[]>([]);
+  const reroutingRef = useRef(false);
+  const pendingIncidentsRef = useRef<TrafficIncident[] | null>(null);
 
   const [mapLoaded, setMapLoaded] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
@@ -255,6 +262,7 @@ export const RealMapView = () => {
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
   const [nightMode, setNightMode] = useState(isNightHour());
   const [incidents, setIncidents] = useState<TrafficIncident[]>([]);
+  const [legendOpen, setLegendOpen] = useState(true);
   const [clockStr, setClockStr] = useState(() => {
     const n = new Date();
     return `${n.getHours().toString().padStart(2, '0')}:${n.getMinutes().toString().padStart(2, '0')}`;
@@ -262,6 +270,8 @@ export const RealMapView = () => {
 
   const cityData = useCityStore((state) => state.cityData);
   const activeFilters = useCityStore((state) => state.activeFilters);
+  const addLiveFeedEntry = useCityStore((state) => state.addLiveFeedEntry);
+  const removeLiveFeedEntry = useCityStore((state) => state.removeLiveFeedEntry);
   // Keep a ref so the animation loop always reads fresh data without re-subscribing
   cityDataRef.current = cityData;
   incidentsRef.current = incidents;
@@ -348,7 +358,11 @@ export const RealMapView = () => {
         source: 'sensor-heatmap',
         paint: {
           'heatmap-weight':     ['interpolate', ['linear'], ['get', 'weight'], 0, 0, 1, 1],
-          'heatmap-intensity':  1.5,
+          // Zoom-scaled radius/intensity - with ~74 sensors now packed into a
+          // small town, a flat 65px/1.5 blob overlapped almost everywhere and
+          // made the whole map look "on fire" even with only local congestion.
+          'heatmap-intensity':  ['interpolate', ['linear'], ['zoom'], 13, 0.5, 16, 0.9, 19, 1.3],
+          'heatmap-radius':     ['interpolate', ['linear'], ['zoom'], 13, 12, 16, 22, 19, 35],
           'heatmap-color': [
             'interpolate', ['linear'], ['heatmap-density'],
             0,   'rgba(0,0,0,0)',
@@ -357,7 +371,6 @@ export const RealMapView = () => {
             0.8, 'rgba(255,100,0,0.7)',
             1,   'rgba(220,0,0,0.85)',
           ],
-          'heatmap-radius':  65,
           'heatmap-opacity': 0.65,
         },
       });
@@ -424,9 +437,8 @@ export const RealMapView = () => {
         source: 'incident-detours',
         paint: {
           'line-color': '#fb7185',
-          'line-width': 3,
-          'line-dasharray': [2, 2],
-          'line-opacity': 0.9,
+          'line-width': 4,
+          'line-opacity': 0.85,
         },
       });
 
@@ -435,14 +447,35 @@ export const RealMapView = () => {
         data: { type: 'FeatureCollection', features: [] },
       });
       map.current!.addLayer({
+        id: 'traffic-incident-pulse',
+        type: 'circle',
+        source: 'traffic-incident',
+        paint: {
+          'circle-radius': 42,
+          'circle-color': '#ef4444',
+          'circle-opacity': 0.18,
+        },
+      });
+      map.current!.addLayer({
         id: 'traffic-incident-halo',
         type: 'circle',
         source: 'traffic-incident',
         paint: {
-          'circle-radius': 18,
-          'circle-color': '#ef4444',
-          'circle-opacity': 0.3,
+          'circle-radius': 26,
+          'circle-color': '#dc2626',
+          'circle-opacity': 0.55,
           'circle-stroke-color': '#fecaca',
+          'circle-stroke-width': 4,
+        },
+      });
+      map.current!.addLayer({
+        id: 'traffic-incident-core',
+        type: 'circle',
+        source: 'traffic-incident',
+        paint: {
+          'circle-radius': 11,
+          'circle-color': '#7f1d1d',
+          'circle-stroke-color': '#ffffff',
           'circle-stroke-width': 2,
         },
       });
@@ -451,12 +484,18 @@ export const RealMapView = () => {
         type: 'symbol',
         source: 'traffic-incident',
         layout: {
-          'text-field': '!',
+          'text-field': 'SUDAR',
           'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
-          'text-size': 18,
+          'text-size': 14,
+          'text-offset': [0, 2.4],
+          'text-anchor': 'top',
           'text-allow-overlap': true,
         },
-        paint: { 'text-color': '#ffffff' },
+        paint: {
+          'text-color': '#ffffff',
+          'text-halo-color': '#7f1d1d',
+          'text-halo-width': 2,
+        },
       });
 
       // ── Cars: canvas-rendered GeoJSON so they stay fixed during zoom ──────
@@ -556,6 +595,8 @@ export const RealMapView = () => {
   useEffect(() => {
     if (!mapLoaded) return;
     fetchAllRoutes(MAPBOX_TOKEN).then(routes => {
+      originalRoutesRef.current = routes;
+      activeRoutesRef.current = routes;
       carsRef.current = applyRoutes(carsRef.current, routes);
       setRoutesReady(true);
     }).catch(() => setRoutesReady(false));
@@ -566,16 +607,13 @@ export const RealMapView = () => {
     if (!mapLoaded || !map.current) return;
 
     const animate = () => {
-      const now   = Date.now();
+      const now = Date.now();
       const delta = now - lastTickRef.current;
       lastTickRef.current = now;
 
-      // Advance simulation
-      carsRef.current = tickCars(carsRef.current, cityDataRef.current, delta);
-      carsRef.current = assignIncidentReroutes(carsRef.current, incidentsRef.current);
+      carsRef.current = tickCars(carsRef.current, cityDataRef.current, delta, incidentsRef.current);
 
-      // Fetch road-following routes for cars that just started seeking parking
-      carsRef.current.forEach(car => {
+      carsRef.current.forEach((car) => {
         if (
           car.state === 'seeking_parking' &&
           car.targetParking &&
@@ -587,62 +625,69 @@ export const RealMapView = () => {
             MAPBOX_TOKEN,
             car.lng, car.lat,
             car.targetParking.lng, car.targetParking.lat,
-          ).then(routeInfo => {
+          ).then((routeInfo) => {
             carsRef.current = applyParkingRoute(carsRef.current, car.id, routeInfo);
+          }).catch(() => {
+            /* keep the car on its current road loop until a road route is available */
+          }).finally(() => {
             fetchingParkingRef.current.delete(car.id);
           });
         }
-        // Clean up fetching flag if car is no longer seeking parking
         if (car.state !== 'seeking_parking' && fetchingParkingRef.current.has(car.id)) {
           fetchingParkingRef.current.delete(car.id);
         }
+
+        if (
+          car.state === 'rerouting' &&
+          !car.detourRouteInfo &&
+          !fetchingDetourRef.current.has(car.id) &&
+          fetchingDetourRef.current.size < 8
+        ) {
+          const destination = getDetourDestination(
+            car,
+            incidentsRef.current,
+            originalRoutesRef.current,
+          );
+          if (!destination) return;
+          fetchingDetourRef.current.add(car.id);
+          const vias = nearbyRoadVias(originalRoutesRef.current, incidentsRef.current, 5);
+          fetchIncidentDetour(
+            MAPBOX_TOKEN,
+            car.lng, car.lat,
+            destination.lng, destination.lat,
+            vias,
+            incidentsRef.current,
+          ).then((routeInfo) => {
+            if (!routeInfo) return;
+            carsRef.current = applyIncidentDetour(carsRef.current, car.id, routeInfo);
+          }).finally(() => {
+            fetchingDetourRef.current.delete(car.id);
+          });
+        }
+        if (car.state !== 'rerouting' && fetchingDetourRef.current.has(car.id)) {
+          fetchingDetourRef.current.delete(car.id);
+        }
       });
-      if (incidentsRef.current.length > 0) {
-        carsRef.current.forEach((car) => {
-          const assignedIncident = incidentsRef.current.find((incident) => incident.id === car.incidentId);
-          if (
-            car.state === 'rerouting' &&
-            assignedIncident &&
-            !car.detourRouteInfo &&
-            !fetchingDetourRef.current.has(car.id)
-          ) {
-            fetchingDetourRef.current.add(car.id);
-            fetchIncidentDetour(MAPBOX_TOKEN, car, assignedIncident)
-              .then((routeInfo) => {
-                const currentCar = carsRef.current.find((current) => current.id === car.id);
-                if (
-                  currentCar?.incidentId === assignedIncident.id &&
-                  incidentsRef.current.some((incident) => incident.id === assignedIncident.id)
-                ) {
-                  carsRef.current = applyIncidentDetour(carsRef.current, car.id, routeInfo);
-                }
-              })
-              .finally(() => fetchingDetourRef.current.delete(car.id));
-          }
-        });
-      }
+
       if (map.current) {
-        // ── Render cars as GeoJSON features (canvas-anchored, zoom-safe) ────
         const carSrc = map.current.getSource('cars') as mapboxgl.GeoJSONSource | undefined;
         if (carSrc) {
-          // Car count is independent of sensor count.
-          // A dense fleet makes shared-route queues and traffic-light stops observable.
           const trafficReadings = cityDataRef.current?.traffic ?? [];
           const congestedFrac = trafficReadings.length > 0
-            ? trafficReadings.filter(t => t.congestionLevel !== 'low').length / trafficReadings.length
+            ? trafficReadings.filter((t) => t.congestionLevel !== 'low').length / trafficReadings.length
             : 0.3;
-          const activeCount = Math.round(55 + congestedFrac * 40); // 55 (calm) → 95 (full congestion)
+          const activeCount = Math.round(55 + congestedFrac * 40);
 
           const features: GeoJSON.Feature[] = carsRef.current
             .slice(0, activeCount)
-            .filter(c => c.routeInfo && c.state !== 'parked')
-            .map(c => ({
+            .filter((c) => c.routeInfo && c.state !== 'parked')
+            .map((c) => ({
               type: 'Feature',
               geometry: { type: 'Point', coordinates: [c.lng, c.lat] },
               properties: {
-                id:      c.id,
+                id: c.id,
                 carType: c.type,
-                color:   c.state === 'seeking_parking' ? '#f97316' : c.state === 'rerouting' ? '#fb7185' : c.color,
+                color: c.state === 'seeking_parking' ? '#f97316' : c.color,
                 bearing: c.bearing,
               },
             }));
@@ -652,33 +697,30 @@ export const RealMapView = () => {
         const detourSource = map.current.getSource('incident-detours') as mapboxgl.GeoJSONSource | undefined;
         detourSource?.setData({
           type: 'FeatureCollection',
-          features: carsRef.current.flatMap((car) => car.detourRouteInfo ? [{
-            type: 'Feature' as const,
-            geometry: { type: 'LineString' as const, coordinates: car.detourRouteInfo.coords },
-            properties: {},
-          }] : []),
+          features: carsRef.current
+            .filter((car) => car.detourRouteInfo)
+            .map((car) => ({
+              type: 'Feature' as const,
+              geometry: { type: 'LineString' as const, coordinates: car.detourRouteInfo!.coords },
+              properties: {},
+            })),
         });
 
-        // ── Update parking route line ────────────────────────────────────────
         const routeSrc = map.current.getSource('car-parking-route') as mapboxgl.GeoJSONSource | undefined;
         if (routeSrc) {
-          const seeker = carsRef.current.find(c => c.state === 'seeking_parking' && c.targetParking);
+          const seeker = carsRef.current.find((c) => c.state === 'seeking_parking' && c.parkingRouteInfo);
           routeSrc.setData({
             type: 'FeatureCollection',
-            features: seeker ? [{
+            features: seeker?.parkingRouteInfo ? [{
               type: 'Feature',
               geometry: {
                 type: 'LineString',
-                coordinates: [
-                  [seeker.lng, seeker.lat],
-                  [seeker.targetParking!.lng, seeker.targetParking!.lat],
-                ],
+                coordinates: seeker.parkingRouteInfo.coords,
               },
               properties: {},
             }] : [],
           });
         }
-
       }
 
       animRef.current = requestAnimationFrame(animate);
@@ -690,22 +732,108 @@ export const RealMapView = () => {
     };
   }, [mapLoaded]);
 
-  const simulateIncident = () => {
-    const location = selectTrafficIncidentLocation(carsRef.current, incidentsRef.current);
-    if (!location) return;
-    const nextIncident: TrafficIncident = {
-      id: `incident-${Date.now()}-${incidentsRef.current.length}`,
-      ...location,
-    };
-    carsRef.current = startIncidentReroutes(carsRef.current, nextIncident);
-    setIncidents((current) => [...current, nextIncident]);
+  const applyRoadRoutes = async (nextIncidents: TrafficIncident[]) => {
+    pendingIncidentsRef.current = nextIncidents;
+    if (reroutingRef.current) return;
+    reroutingRef.current = true;
+    try {
+      while (pendingIncidentsRef.current) {
+        const requested = pendingIncidentsRef.current;
+        pendingIncidentsRef.current = null;
+        const baseRoutes = originalRoutesRef.current;
+        const routes = requested.length === 0
+          ? (baseRoutes.length > 0 ? baseRoutes : await fetchAllRoutes(MAPBOX_TOKEN))
+          : await rebuildRoutesAvoidingIncidents(MAPBOX_TOKEN, requested, baseRoutes);
+        originalRoutesRef.current = baseRoutes.length > 0 ? baseRoutes : routes;
+        activeRoutesRef.current = routes;
+        carsRef.current = applyAvoidingRoutes(carsRef.current, routes, requested);
+      }
+    } finally {
+      reroutingRef.current = false;
+    }
   };
 
-  const clearIncident = () => {
-    carsRef.current = clearIncidentReroutes(carsRef.current);
-    fetchingDetourRef.current.clear();
-    setIncidents([]);
+  const simulateIncident = async () => {
+    const location = selectTrafficIncidentLocation(carsRef.current, incidentsRef.current);
+    if (!location) return;
+    // Only ask the backend to create it - every connected tab (including this
+    // one) picks it up from the 'city-event' broadcast below, so there is one
+    // shared incident state instead of a per-browser-tab illusion of one.
+    await createIncidentEvent(location.lat, location.lng);
   };
+
+  const clearIncident = async () => {
+    const active = incidentsRef.current;
+    await Promise.all(active.map((incident) => resolveIncidentEvent(Number(incident.id))));
+    // Local state clears once the matching 'resolved' broadcasts arrive.
+  };
+
+  // Hydrate incidents already active on the backend when this tab (re)connects,
+  // so a freshly opened tab sees crashes that were simulated before it loaded.
+  useEffect(() => {
+    if (!routesReady) return;
+    let cancelled = false;
+    fetchActiveIncidents().then((events) => {
+      if (cancelled || events.length === 0) return;
+      const hydrated: TrafficIncident[] = events.map((e) => ({ id: String(e.id), lat: e.lat, lng: e.lng }));
+      setIncidents(hydrated);
+      void applyRoadRoutes(hydrated);
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routesReady]);
+
+  // Single source of truth for incident state: every create/resolve flows
+  // through this socket broadcast, whether triggered by this tab or another.
+  useEffect(() => {
+    const unsubscribe = websocketService.onCityEvent((payload) => {
+      if (payload.action === 'created' && payload.event?.event_type === 'accident' && payload.event.status === 'active') {
+        const { id, lat, lng } = payload.event;
+        const incident: TrafficIncident = { id: String(id), lat, lng };
+        setIncidents((prev) => {
+          if (prev.some((i) => i.id === incident.id)) return prev;
+          const next = [...prev, incident];
+          void applyRoadRoutes(next);
+          return next;
+        });
+        addLiveFeedEntry({
+          id: `incident-${incident.id}`,
+          timestamp: Date.now(),
+          sensorId: incident.id,
+          sensorName: 'Prometni sudar',
+          type: 'incident',
+          status: 'critical',
+          message: `Sudar na cesti — vozila se preusmjeravaju (${lat.toFixed(4)}, ${lng.toFixed(4)})`,
+        });
+      } else if (payload.action === 'resolved' && payload.id !== undefined) {
+        const resolvedId = String(payload.id);
+        fetchingDetourRef.current.clear();
+        setIncidents((prev) => {
+          if (!prev.some((i) => i.id === resolvedId)) return prev;
+          const next = prev.filter((i) => i.id !== resolvedId);
+          if (next.length === 0) {
+            carsRef.current = clearAllIncidents(carsRef.current);
+          }
+          void applyRoadRoutes(next);
+          return next;
+        });
+        // Drop the pinned "critical" entry for this incident - otherwise it stays
+        // stuck at the top of the feed forever even after being resolved.
+        removeLiveFeedEntry(`incident-${resolvedId}`);
+        addLiveFeedEntry({
+          id: `incident-clear-${Date.now()}`,
+          timestamp: Date.now(),
+          sensorId: 'incident-clear',
+          sensorName: 'Prometni sudar',
+          type: 'incident',
+          status: 'normal',
+          message: 'Sudar uklonjen — vozila se vraćaju na originalne cestovne rute.',
+        });
+      }
+    });
+    return unsubscribe;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [addLiveFeedEntry]);
 
   return (
     <div className="relative w-full h-full">
@@ -742,31 +870,50 @@ export const RealMapView = () => {
           <span>Učitavanje ruta vozila…</span>
         </div>
       )}
-
-      {/* Status legend */}
-      <div className="absolute bottom-4 left-4 z-20 bg-gray-900/90 backdrop-blur-sm text-white rounded-lg px-3 py-2 border border-gray-700 shadow">
-        <p className="text-xs font-semibold text-gray-300 mb-1.5">Status senzora</p>
-        {([['#22c55e', 'Normalno'], ['#f59e0b', 'Upozorenje'], ['#ef4444', 'Kritično']] as const).map(
-          ([c, l]) => (
-            <div key={l} className="flex items-center gap-2 text-xs text-gray-300 mb-1">
-              <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: c }} />
-              <span>{l}</span>
+      {/* Status legend (foldable) */}
+      <div className="absolute bottom-4 left-4 z-20 bg-gray-900/90 backdrop-blur-sm text-white rounded-lg border border-gray-700 shadow max-w-[220px]">
+        <button
+          type="button"
+          onClick={() => setLegendOpen((open) => !open)}
+          className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left hover:bg-gray-800/60 rounded-lg transition-colors"
+        >
+          <span className="text-xs font-semibold text-gray-300">Legenda</span>
+          {legendOpen ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronUp className="w-4 h-4 text-gray-400" />}
+        </button>
+        {legendOpen && (
+          <div className="px-3 pb-2">
+            <p className="text-xs font-semibold text-gray-300 mb-1.5">Status senzora</p>
+            {([['#22c55e', 'Normalno'], ['#f59e0b', 'Upozorenje'], ['#ef4444', 'Kritično']] as const).map(
+              ([c, l]) => (
+                <div key={l} className="flex items-center gap-2 text-xs text-gray-300 mb-1">
+                  <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: c }} />
+                  <span>{l}</span>
+                </div>
+              ),
+            )}
+            <div className="border-t border-gray-700 mt-1.5 pt-1.5">
+              <p className="text-xs font-semibold text-gray-400 mb-1">Promet</p>
+              {([['#3b82f6','Osobni auto'],['#fbbf24','Taxi'],['#a78bfa','Bus']] as const).map(([c,l]) => (
+                <div key={l} className="flex items-center gap-2 text-xs text-gray-400 mb-0.5">
+                  <div className="w-4 h-2 rounded-sm flex-shrink-0 border border-white/40" style={{ backgroundColor: c }} />
+                  <span>{l}</span>
+                </div>
+              ))}
+              <div className="flex items-center gap-2 text-xs text-gray-400 mt-0.5">
+                <div className="w-4 h-0.5 flex-shrink-0" style={{ background: 'repeating-linear-gradient(90deg,#f97316 0,#f97316 4px,transparent 4px,transparent 7px)' }} />
+                <span>Ruta do parkinga</span>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-gray-400 mt-0.5">
+                <div className="w-4 h-0.5 flex-shrink-0 bg-rose-400" />
+                <span>Nove cestovne rute</span>
+              </div>
+              <div className="flex items-center gap-2 text-xs text-gray-400 mt-0.5">
+                <div className="w-3 h-3 rounded-full flex-shrink-0 bg-red-600 border-2 border-red-200" />
+                <span>Sudar</span>
+              </div>
             </div>
-          ),
-        )}
-        <div className="border-t border-gray-700 mt-1.5 pt-1.5">
-          <p className="text-xs font-semibold text-gray-400 mb-1">Promet</p>
-          {([['#3b82f6','Osobni auto'],['#fbbf24','Taxi'],['#a78bfa','Bus']] as const).map(([c,l]) => (
-            <div key={l} className="flex items-center gap-2 text-xs text-gray-400 mb-0.5">
-              <div className="w-4 h-2 rounded-sm flex-shrink-0 border border-white/40" style={{ backgroundColor: c }} />
-              <span>{l}</span>
-            </div>
-          ))}
-          <div className="flex items-center gap-2 text-xs text-gray-400 mt-0.5">
-            <div className="w-4 h-0.5 flex-shrink-0" style={{ background: 'repeating-linear-gradient(90deg,#f97316 0,#f97316 4px,transparent 4px,transparent 7px)' }} />
-            <span>Ruta do parkinga</span>
           </div>
-        </div>
+        )}
       </div>
 
       <div className="absolute bottom-4 right-4 z-20 flex items-center gap-2">

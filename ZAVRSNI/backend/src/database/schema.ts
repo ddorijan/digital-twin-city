@@ -81,6 +81,25 @@ CREATE INDEX IF NOT EXISTS idx_sensor_hourly_lookup
   ON sensor_readings_hourly(sensor_id, interval_start DESC);
 
 -- ============================================================================
+-- AGGREGATED DATA - DAILY (long-term retention, default 1 year)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS sensor_readings_daily (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  sensor_id TEXT NOT NULL,
+  sensor_type TEXT NOT NULL,
+  interval_start INTEGER NOT NULL,  -- Unix timestamp aligned to day (UTC)
+  avg_value REAL,
+  min_value REAL,
+  max_value REAL,
+  count INTEGER,
+  data TEXT,  -- JSON with aggregated metrics
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_sensor_daily_lookup 
+  ON sensor_readings_daily(sensor_id, interval_start DESC);
+
+-- ============================================================================
 -- CITY EVENTS (Incidents, road works, floods, etc.)
 -- ============================================================================
 CREATE TABLE IF NOT EXISTS city_events (

@@ -37,6 +37,8 @@ export interface SimCar {
   detourRouteInfo: RouteInfo | null;
   detourDistAlongRoute: number;
   incidentId: string | null;
+  /** Timestamp when the car entered rerouting; used for an on-road fallback. */
+  rerouteStartedAt: number;
 }
 
 // ─── Route waypoints ──────────────────────────────────────────────────────────
@@ -221,6 +223,27 @@ function calcBearing(lat0: number, lng0: number, lat1: number, lng1: number): nu
   return b < 0 ? b + 360 : b;
 }
 
+// Smallest angle (0-180°) between two compass bearings
+function angleDiff(a: number, b: number): number {
+  const diff = Math.abs(a - b) % 360;
+  return diff > 180 ? 360 - diff : diff;
+}
+
+// Point on `route` closest to (lat, lng) - used to rejoin a car onto its
+// original loop at its current physical position rather than a stale distance.
+function nearestDistAlongRoute(route: RouteInfo, lat: number, lng: number): number {
+  let closestIndex = 0;
+  let closestDistance = Infinity;
+  route.coords.forEach(([clng, clat], index) => {
+    const d = mDist(lat, lng, clat, clng);
+    if (d < closestDistance) {
+      closestDistance = d;
+      closestIndex = index;
+    }
+  });
+  return route.cumDist[closestIndex];
+}
+
 export function buildRouteInfo(coords: [number, number][]): RouteInfo {
   const cumDist: number[] = [0];
   for (let i = 1; i < coords.length; i++) {
@@ -250,34 +273,242 @@ function posOnRoute(ri: RouteInfo, dist: number): { lng: number; lat: number; be
   };
 }
 
-function detourPassesIncident(route: RouteInfo, incident: TrafficIncident): boolean {
-  return route.coords.some(([lng, lat]) => mDist(lat, lng, incident.lat, incident.lng) < 90);
+function pointHitsIncident(lat: number, lng: number, incidents: TrafficIncident[], radius: number): boolean {
+  return incidents.some((incident) => mDist(lat, lng, incident.lat, incident.lng) < radius);
 }
 
-function routePassesIncident(car: SimCar, incident: TrafficIncident): boolean {
-  return car.routeInfo?.coords.some(([lng, lat]) =>
-    mDist(lat, lng, incident.lat, incident.lng) < 45,
-  ) ?? false;
+function routeHitsIncident(route: RouteInfo, incident: TrafficIncident, radius = 90): boolean {
+  for (let i = 0; i < route.coords.length; i++) {
+    const [lng, lat] = route.coords[i];
+    if (mDist(lat, lng, incident.lat, incident.lng) < radius) return true;
+    if (i === 0) continue;
+    const [lng0, lat0] = route.coords[i - 1];
+    const segLen = mDist(lat0, lng0, lat, lng);
+    const steps = Math.max(1, Math.ceil(segLen / 18));
+    for (let s = 1; s < steps; s++) {
+      const t = s / steps;
+      if (mDist(lat0 + (lat - lat0) * t, lng0 + (lng - lng0) * t, incident.lat, incident.lng) < radius) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
-function makeFallbackDetour(car: SimCar, incident: TrafficIncident, destination: { lat: number; lng: number }): RouteInfo {
-  const heading = car.bearing * (Math.PI / 180);
-  const forwardLat = Math.cos(heading);
-  const forwardLng = Math.sin(heading);
-  const sideLat = -forwardLng;
-  const sideLng = forwardLat;
-  const offset = (forwardMetres: number, sideMetres: number): [number, number] => [
-    incident.lng + (forwardLng * forwardMetres + sideLng * sideMetres) / 78_500,
-    incident.lat + (forwardLat * forwardMetres + sideLat * sideMetres) / 111_000,
+export function routeHitsAnyIncident(route: RouteInfo, incidents: TrafficIncident[], radius = 90): boolean {
+  return incidents.some((incident) => routeHitsIncident(route, incident, radius));
+}
+
+export function nearbyRoadVias(routes: RouteInfo[], incidents: TrafficIncident[], limit = 4): [number, number][] {
+  const scored: Array<{ point: [number, number]; score: number }> = [];
+  routes.forEach((route) => {
+    const blocked = routeHitsAnyIncident(route, incidents, 90);
+    route.coords.forEach(([lng, lat]) => {
+      const distance = Math.min(
+        ...incidents.map((incident) => mDist(lat, lng, incident.lat, incident.lng)),
+      );
+      if (distance < 450 || distance > 1800) return;
+      scored.push({
+        point: [lng, lat],
+        score: Math.abs(distance - 900) + (blocked ? 2500 : 0),
+      });
+    });
+  });
+  scored.sort((a, b) => a.score - b.score);
+  const unique: [number, number][] = [];
+  for (const item of scored) {
+    if (unique.some((point) => mDist(point[1], point[0], item.point[1], item.point[0]) < 220)) continue;
+    unique.push(item.point);
+    if (unique.length >= limit) break;
+  }
+  return unique;
+}
+
+function nearbyRoadVia(routes: RouteInfo[], incidents: TrafficIncident[]): [number, number] | null {
+  return nearbyRoadVias(routes, incidents, 1)[0] ?? null;
+}
+
+function aheadDistance(route: RouteInfo, fromDist: number, toDist: number): number {
+  return ((toDist - fromDist) % route.totalDist + route.totalDist) % route.totalDist;
+}
+
+function incidentDistanceOnRoute(route: RouteInfo, incident: TrafficIncident): number | null {
+  let bestDist: number | null = null;
+  let bestScore = Infinity;
+  route.coords.forEach(([lng, lat], index) => {
+    const score = mDist(lat, lng, incident.lat, incident.lng);
+    if (score < bestScore) {
+      bestScore = score;
+      bestDist = route.cumDist[index];
+    }
+  });
+  return bestScore < 180 ? bestDist : null;
+}
+
+export function getDetourDestination(
+  car: SimCar,
+  incidents: TrafficIncident[],
+  routes: RouteInfo[] = [],
+): { lng: number; lat: number } | null {
+  if (!car.routeInfo || incidents.length === 0) return null;
+  if (!routeHitsAnyIncident(car.routeInfo, incidents, 90)) return null;
+  const route = car.routeInfo;
+  const start = car.distAlongRoute;
+  const step = 25;
+  let seenIncident = false;
+  let clearRun = 0;
+  for (let travelled = 80; travelled < route.totalDist; travelled += step) {
+    const pos = posOnRoute(route, start + travelled);
+    const hit = pointHitsIncident(pos.lat, pos.lng, incidents, 160);
+    if (hit) {
+      seenIncident = true;
+      clearRun = 0;
+      continue;
+    }
+    if (seenIncident) {
+      clearRun += step;
+      if (clearRun >= 900) return { lng: pos.lng, lat: pos.lat };
+    }
+  }
+  const farVia = nearbyRoadVias(routes, incidents, 1)[0];
+  if (farVia) return { lng: farVia[0], lat: farVia[1] };
+  const fallback = posOnRoute(route, start + 1600);
+  if (pointHitsIncident(fallback.lat, fallback.lng, incidents, 160)) return null;
+  return { lng: fallback.lng, lat: fallback.lat };
+}
+
+export async function fetchIncidentDetour(
+  token: string,
+  fromLng: number,
+  fromLat: number,
+  toLng: number,
+  toLat: number,
+  vias: [number, number][],
+  incidents: TrafficIncident[],
+): Promise<RouteInfo | null> {
+  const attempts: [number, number][][] = [
+    ...vias.map((via) => [[fromLng, fromLat], via, [toLng, toLat]] as [number, number][]),
+    [[fromLng, fromLat], [toLng, toLat]],
   ];
+  let best: RouteInfo | null = null;
+  for (const waypoints of attempts) {
+    try {
+      const routes = await fetchDrivingRoutes(
+        token,
+        waypoints,
+        '&alternatives=true&continue_straight=false',
+        incidents,
+      );
+      for (const route of routes) {
+        if (route.totalDist < 800) continue;
+        if (routeHitsAnyIncident(route, incidents, 90)) continue;
+        if (!best || route.totalDist > best.totalDist) best = route;
+      }
+      if (best && best.totalDist > 1100) return best;
+    } catch {
+      /* try next via */
+    }
+  }
+  return best;
+}
 
-  const side = car.lng < incident.lng ? -1 : 1;
-  return buildRouteInfo([
-    [car.lng, car.lat],
-    offset(-180, side * 260),
-    offset(280, side * 260),
-    [destination.lng, destination.lat],
-  ]);
+export function applyIncidentDetour(cars: SimCar[], carId: string, routeInfo: RouteInfo): SimCar[] {
+  return cars.map((car) =>
+    car.id === carId
+      ? {
+        ...car,
+        state: 'rerouting' as const,
+        detourRouteInfo: routeInfo,
+        detourDistAlongRoute: 0,
+        rerouteStartedAt: 0,
+      }
+      : car,
+  );
+}
+
+/**
+ * Rejoin every rerouting car onto its original loop once all incidents are
+ * cleared. Snaps to the point nearest the car's *current* position instead of
+ * jumping back to the stale pre-detour distance, which used to make cars
+ * teleport backwards (and briefly vanish off-route) when a crash was cleared.
+ */
+export function clearAllIncidents(cars: SimCar[]): SimCar[] {
+  return cars.map((car) => {
+    if (car.state !== 'rerouting' || !car.routeInfo) {
+      return { ...car, incidentId: null, rerouteStartedAt: 0 };
+    }
+    const distAlongRoute = nearestDistAlongRoute(car.routeInfo, car.lat, car.lng);
+    const pos = posOnRoute(car.routeInfo, distAlongRoute);
+    return {
+      ...car,
+      state: 'driving' as const,
+      distAlongRoute,
+      lat: pos.lat,
+      lng: pos.lng,
+      bearing: pos.bearing,
+      detourRouteInfo: null,
+      detourDistAlongRoute: 0,
+      incidentId: null,
+      rerouteStartedAt: 0,
+    };
+  });
+}
+
+/** Build a road-following fallback by removing the blocked part of the loop. */
+function buildAvoidingLoop(route: RouteInfo, incidents: TrafficIncident[]): RouteInfo | null {
+  if (incidents.length === 0) return null;
+  const kept = route.coords.filter(([lng, lat]) =>
+    !pointHitsIncident(lat, lng, incidents, 170),
+  );
+  if (kept.length < 2) return null;
+  return buildRouteInfo(kept);
+}
+
+function waypointsAvoidingIncidents(
+  waypoints: [number, number][],
+  incidents: TrafficIncident[],
+  via: [number, number] | null,
+): [number, number][] {
+  const filtered = waypoints.filter(([lng, lat]) =>
+    !incidents.some((incident) => mDist(lat, lng, incident.lat, incident.lng) < 160),
+  );
+  const base = filtered.length >= 2 ? filtered : waypoints;
+  if (!via) return base;
+  const insertAt = Math.max(1, Math.min(base.length - 1, Math.floor(base.length / 2)));
+  return [...base.slice(0, insertAt), via, ...base.slice(insertAt)];
+}
+
+async function fetchDrivingRoutes(
+  token: string,
+  waypoints: [number, number][],
+  extraQuery = '',
+  incidents: TrafficIncident[] = [],
+): Promise<RouteInfo[]> {
+  const coordStr = waypoints.map((waypoint) => waypoint.join(',')).join(';');
+  const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${coordStr}` +
+    `?geometries=geojson&overview=full${extraQuery}&access_token=${token}`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const json = await response.json() as {
+    routes?: { geometry?: { coordinates?: [number, number][] } }[];
+    message?: string;
+  };
+  if (json.message) throw new Error(json.message);
+  return (json.routes ?? [])
+    .map((candidate) => candidate.geometry?.coordinates ?? [])
+    .filter((raw) => raw.length >= 2)
+    .map((raw) => buildRouteInfo(raw as [number, number][]))
+    .filter((route) => incidents.length === 0 || !routeHitsAnyIncident(route, incidents, 90));
+}
+
+async function fetchDrivingRoute(
+  token: string,
+  waypoints: [number, number][],
+  extraQuery = '',
+  incidents: TrafficIncident[] = [],
+): Promise<RouteInfo | null> {
+  const routes = await fetchDrivingRoutes(token, waypoints, extraQuery, incidents);
+  return routes.sort((a, b) => b.totalDist - a.totalDist)[0] ?? null;
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -362,8 +593,7 @@ export async function fetchParkingRoute(
     if (raw.length >= 2) return buildRouteInfo(raw);
     throw new Error('Empty route');
   } catch {
-    // Fallback: straight line (will at least stay on screen)
-    return buildRouteInfo([[fromLng, fromLat], [toLng, toLat]]);
+    throw new Error('Parking route is not on a road');
   }
 }
 
@@ -374,99 +604,91 @@ export function applyParkingRoute(cars: SimCar[], carId: string, routeInfo: Rout
   );
 }
 
-/** Get a road detour around an incident, then rejoin the car's current route ahead of it. */
-export async function fetchIncidentDetour(
+/**
+ * Rebuild every loaded loop so it stays on Mapbox roads and avoids all active
+ * incidents. Cars keep travelling on their assigned route instead of drawing
+ * one-off off-road detours.
+ */
+export async function rebuildRoutesAvoidingIncidents(
   token: string,
-  car: SimCar,
-  incident: TrafficIncident,
-): Promise<RouteInfo> {
-  if (!car.routeInfo) throw new Error('Cannot reroute a car without a route');
-
-  const destination = posOnRoute(
-    car.routeInfo,
-    (car.distAlongRoute + 1_000) % car.routeInfo.totalDist,
-  );
-  const direction = car.lng < incident.lng ? -1 : 1;
-  const viaLng = incident.lng + direction * 0.006;
-  const viaLat = incident.lat + (car.lat < incident.lat ? -0.003 : 0.003);
-  const coordinates = `${car.lng},${car.lat};${viaLng},${viaLat};${destination.lng},${destination.lat}`;
-  const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${coordinates}` +
-    `?geometries=geojson&overview=full&access_token=${token}`;
-
-  try {
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const json = await response.json() as { routes?: { geometry?: { coordinates?: [number, number][] } }[] };
-    const coordinates = json.routes?.[0]?.geometry?.coordinates ?? [];
-    if (coordinates.length >= 2) {
-      const detour = buildRouteInfo(coordinates);
-      if (!detourPassesIncident(detour, incident)) return detour;
+  incidents: TrafficIncident[],
+  currentRoutes: RouteInfo[],
+): Promise<RouteInfo[]> {
+  const rebuilt = await Promise.all(ROUTE_WAYPOINTS.map(async (waypoints, idx) => {
+    const current = currentRoutes[idx];
+    if (incidents.length === 0) {
+      try {
+        return (await fetchDrivingRoute(token, waypoints)) ?? current ?? buildRouteInfo(waypoints);
+      } catch {
+        return current ?? buildRouteInfo(waypoints);
+      }
     }
-    throw new Error('Empty detour geometry');
-  } catch {
-    return makeFallbackDetour(car, incident, destination);
-  }
+
+    const via = nearbyRoadVia(currentRoutes.filter(Boolean), incidents);
+    const attempts: Array<[number, number][]> = [
+      waypointsAvoidingIncidents(waypoints, incidents, via),
+      waypointsAvoidingIncidents(waypoints, incidents, null),
+      waypoints,
+    ];
+
+    for (const attempt of attempts) {
+      try {
+        const route = await fetchDrivingRoute(
+          token,
+          attempt,
+          '&alternatives=true&continue_straight=false',
+          incidents,
+        );
+        if (route) return route;
+      } catch {
+        /* try the next Mapbox request */
+      }
+    }
+
+    if (current && !routeHitsAnyIncident(current, incidents, 120)) return current;
+    return current;
+  }));
+  return rebuilt;
 }
 
-/** Route every active vehicle whose loaded route passes through the incident. */
-export function startIncidentReroutes(cars: SimCar[], incident: TrafficIncident): SimCar[] {
-  return cars.map((car) =>
-    car.state === 'driving' && car.incidentId === null && routePassesIncident(car, incident)
-      ? {
+export function snapCarToRoute(car: SimCar): SimCar {
+  if (!car.routeInfo) return car;
+  const pos = posOnRoute(car.routeInfo, car.distAlongRoute);
+  return { ...car, lat: pos.lat, lng: pos.lng, bearing: pos.bearing };
+}
+
+export function applyAvoidingRoutes(
+  cars: SimCar[],
+  routes: RouteInfo[],
+  incidents: TrafficIncident[] = [],
+): SimCar[] {
+  if (incidents.length === 0) {
+    return cars.map((car) => {
+      const route = routes[car.routeId] ?? car.routeInfo;
+      if (!route) return {
         ...car,
-        state: 'rerouting',
+        state: car.state === 'rerouting' ? 'driving' : car.state,
         detourRouteInfo: null,
         detourDistAlongRoute: 0,
-        incidentId: incident.id,
-      }
-      : car,
-  );
-}
-
-/** Route vehicles that resume driving when their route passes an active incident. */
-export function assignIncidentReroutes(cars: SimCar[], incidents: TrafficIncident[]): SimCar[] {
-  return cars.map((car) => {
-    if (car.state !== 'driving' || car.incidentId !== null) return car;
-    const matchedIncident = [...incidents].reverse().find((incident) => routePassesIncident(car, incident));
-    return matchedIncident
-      ? { ...car, state: 'rerouting', incidentId: matchedIncident.id }
-      : car;
-  });
-}
-
-export function applyIncidentDetour(cars: SimCar[], carId: string, routeInfo: RouteInfo): SimCar[] {
-  return cars.map((car) =>
-    car.id === carId
-      ? { ...car, detourRouteInfo: routeInfo, detourDistAlongRoute: 0 }
-      : car,
-  );
-}
-
-/** Stop incident detours and place affected cars back onto their original route. */
-export function clearIncidentReroutes(cars: SimCar[]): SimCar[] {
-  return cars.map((car) => {
-    if (car.state !== 'rerouting' || !car.routeInfo) return { ...car, incidentId: null };
-    let closestIndex = 0;
-    let closestDistance = Infinity;
-    car.routeInfo.coords.forEach(([lng, lat], index) => {
-      const distance = mDist(car.lat, car.lng, lat, lng);
-      if (distance < closestDistance) {
-        closestDistance = distance;
-        closestIndex = index;
-      }
+        incidentId: null,
+        rerouteStartedAt: 0,
+      };
+      const snapped = snapCarToRoute({ ...car, routeInfo: route });
+      return {
+        ...snapped,
+        state: 'driving',
+        detourRouteInfo: null,
+        detourDistAlongRoute: 0,
+        incidentId: null,
+        rerouteStartedAt: 0,
+      };
     });
-    const position = posOnRoute(car.routeInfo, car.routeInfo.cumDist[closestIndex]);
-    return {
-      ...car,
-      state: 'driving',
-      distAlongRoute: car.routeInfo.cumDist[closestIndex],
-      lat: position.lat,
-      lng: position.lng,
-      bearing: position.bearing,
-      detourRouteInfo: null,
-      detourDistAlongRoute: 0,
-      incidentId: null,
-    };
+  }
+  return cars.map((car) => {
+    const route = routes[car.routeId] ?? car.routeInfo;
+    if (!route) return car;
+    if (routeHitsAnyIncident(route, incidents, 90)) return car;
+    return { ...car, routeInfo: route };
   });
 }
 
@@ -566,6 +788,7 @@ export function makeInitialCars(): SimCar[] {
       detourRouteInfo: null,
       detourDistAlongRoute: 0,
       incidentId: null,
+      rerouteStartedAt: 0,
     };
   }));
 }
@@ -585,55 +808,96 @@ export function getSmartLights(cityData: CityData): { sensorId: string; extended
   }));
 }
 
-// ─── Simulation tick ──────────────────────────────────────────────────────────
-
 const BASE_SPEED: Record<CarType, number> = { car: 13.9, taxi: 13.9, bus: 11.1 }; // m/s  (50 km/h / 40 km/h)
 
 export function tickCars(
   cars: SimCar[],
   cityData: CityData | null,
   deltaMs: number,
+  incidents: TrafficIncident[] = [],
 ): SimCar[] {
   if (!cityData || deltaMs <= 0) return cars;
 
   const delta = Math.min(deltaMs, 150);
-  const now   = Date.now();
+  const now = Date.now();
+
+  // Precompute per-tick lookups once instead of re-filtering/re-scanning the
+  // full sensor list for every car, every frame - this scales with sensor
+  // count (now ~74 sensors vs ~44 before), so it matters a lot more than it used to.
+  const trafficSensors = cityData.locations.filter((l) => l.type === 'traffic');
+  const trafficLightSensors = cityData.locations.filter((l) => l.type === 'traffic-light');
+  const trafficBySensorId = new Map(cityData.traffic.map((t) => [t.sensorId, t]));
+  const trafficLightBySensorId = new Map(cityData.trafficLights.map((t) => [t.sensorId, t]));
 
   const getCongMult = (lat: number, lng: number): number => {
     let best = 1.0;
-    for (const ts of cityData.locations) {
-      if (ts.type !== 'traffic') continue;
+    for (const ts of trafficSensors) {
       const d = mDist(lat, lng, ts.lat, ts.lng);
       if (d < 350) {
-        const t = cityData.traffic.find(t => t.sensorId === ts.id);
-        const m = t?.congestionLevel === 'high'   ? 0.12
-                : t?.congestionLevel === 'medium' ? 0.45
-                : 1.0;
+        const t = trafficBySensorId.get(ts.id);
+        const m = t?.congestionLevel === 'high' ? 0.12
+          : t?.congestionLevel === 'medium' ? 0.45
+          : 1.0;
         if (m < best) best = m;
       }
     }
     return best;
   };
 
-  const getTrafficLightMult = (lat: number, lng: number): number => {
-    for (const light of cityData.locations) {
-      if (light.type !== 'traffic-light' || mDist(lat, lng, light.lat, light.lng) > 85) continue;
-      const reading = cityData.trafficLights.find((item) => item.sensorId === light.id);
+  const getTrafficLightMult = (lat: number, lng: number, bearing: number): number => {
+    for (const light of trafficLightSensors) {
+      if (mDist(lat, lng, light.lat, light.lng) > 85) continue;
+      // Only stop for the light if it's ahead of us - otherwise a 2-way street's
+      // opposite-direction (or a crossing street's) traffic freezes for no reason.
+      const bearingToLight = calcBearing(lat, lng, light.lat, light.lng);
+      if (angleDiff(bearing, bearingToLight) > 70) continue;
+      const reading = trafficLightBySensorId.get(light.id);
       if (reading?.status === 'red') return 0;
       if (reading?.status === 'yellow') return 0.25;
     }
     return 1;
   };
 
-  const getSpeedMult = (lat: number, lng: number) => getCongMult(lat, lng) * getTrafficLightMult(lat, lng);
+  const getSpeedMult = (lat: number, lng: number, bearing: number) =>
+    getCongMult(lat, lng) * getTrafficLightMult(lat, lng, bearing);
 
-  return cars.map(car => {
+  // Route-vs-incident geometry (fine-grained segment stepping) is expensive
+  // and identical for every car sharing the same route, so compute it once
+  // per route per tick instead of once per car - this was the dominant
+  // per-frame cost whenever an incident was active.
+  const routeBlockedCache = new Map<number, boolean>();
+  const routeIncidentDistCache = new Map<number, (number | null)[]>();
+
+  const isRouteBlocked = (car: SimCar): boolean => {
+    if (incidents.length === 0 || !car.routeInfo) return false;
+    let cached = routeBlockedCache.get(car.routeId);
+    if (cached === undefined) {
+      cached = routeHitsAnyIncident(car.routeInfo, incidents, 90);
+      routeBlockedCache.set(car.routeId, cached);
+    }
+    return cached;
+  };
+
+  const getDistToIncidentAhead = (car: SimCar): number | null => {
+    if (incidents.length === 0 || !car.routeInfo) return null;
+    let dists = routeIncidentDistCache.get(car.routeId);
+    if (!dists) {
+      dists = incidents.map((incident) => incidentDistanceOnRoute(car.routeInfo!, incident));
+      routeIncidentDistCache.set(car.routeId, dists);
+    }
+    let nearest: number | null = null;
+    for (const incidentDist of dists) {
+      if (incidentDist === null) continue;
+      const ahead = aheadDistance(car.routeInfo!, car.distAlongRoute, incidentDist);
+      if (nearest === null || ahead < nearest) nearest = ahead;
+    }
+    return nearest;
+  };
+
+  return cars.map((car) => {
     const c = { ...car };
-
-    // Route not loaded yet – stay hidden, don't move
     if (!c.routeInfo) return c;
 
-    // Parked -------------------------------------------------------------------
     if (c.state === 'parked') {
       if (now >= c.parkedUntil) {
         c.state = 'driving';
@@ -646,16 +910,30 @@ export function tickCars(
       return c;
     }
 
-    // Incident reroute – wait until Directions returns, then follow the detour.
     if (c.state === 'rerouting') {
-      if (!c.detourRouteInfo) return c;
-      const speed = BASE_SPEED[c.type] * getSpeedMult(c.lat, c.lng);
+      if (!c.detourRouteInfo) {
+        if (c.rerouteStartedAt > 0 && now - c.rerouteStartedAt > 2500) {
+          const fallback = buildAvoidingLoop(c.routeInfo, incidents);
+          if (fallback && !routeHitsAnyIncident(fallback, incidents, 90)) {
+            c.detourRouteInfo = fallback;
+            c.detourDistAlongRoute = 0;
+            c.rerouteStartedAt = 0;
+          } else {
+            c.state = 'driving';
+            c.incidentId = null;
+            c.rerouteStartedAt = 0;
+          }
+        }
+        return c;
+      }
+      const speed = BASE_SPEED[c.type] * getSpeedMult(c.lat, c.lng, c.bearing);
       c.detourDistAlongRoute += speed * delta / 1_000;
       if (c.detourDistAlongRoute >= c.detourRouteInfo.totalDist) {
         const destination = c.detourRouteInfo.coords[c.detourRouteInfo.coords.length - 1];
         let closestIndex = 0;
         let closestDistance = Infinity;
         c.routeInfo.coords.forEach(([lng, lat], index) => {
+          if (incidents.some((incident) => mDist(lat, lng, incident.lat, incident.lng) < 140)) return;
           const distance = mDist(lat, lng, destination[1], destination[0]);
           if (distance < closestDistance) {
             closestDistance = distance;
@@ -666,6 +944,10 @@ export function tickCars(
         c.state = 'driving';
         c.detourRouteInfo = null;
         c.detourDistAlongRoute = 0;
+        c.incidentId = null;
+        c.rerouteStartedAt = 0;
+        const rejoin = posOnRoute(c.routeInfo, c.distAlongRoute);
+        c.lat = rejoin.lat; c.lng = rejoin.lng; c.bearing = rejoin.bearing;
         return c;
       }
       const position = posOnRoute(c.detourRouteInfo, c.detourDistAlongRoute);
@@ -673,20 +955,17 @@ export function tickCars(
       return c;
     }
 
-    // Seeking parking – follow road route (fetched async via Mapbox) -----------
     if (c.state === 'seeking_parking' && c.targetParking) {
       if (!c.parkingRouteInfo) {
-        // Route not yet fetched – continue on normal road route while waiting
-        const spd = BASE_SPEED[c.type] * getSpeedMult(c.lat, c.lng);
+        const spd = BASE_SPEED[c.type] * getSpeedMult(c.lat, c.lng, c.bearing);
         c.distAlongRoute = (c.distAlongRoute + spd * delta / 1_000) % c.routeInfo.totalDist;
         const pos = posOnRoute(c.routeInfo, c.distAlongRoute);
         c.lat = pos.lat; c.lng = pos.lng; c.bearing = pos.bearing;
         return c;
       }
-      const spd = BASE_SPEED[c.type] * getSpeedMult(c.lat, c.lng);
+      const spd = BASE_SPEED[c.type] * getSpeedMult(c.lat, c.lng, c.bearing);
       c.parkingDistAlongRoute += spd * delta / 1_000;
       if (c.parkingDistAlongRoute >= c.parkingRouteInfo.totalDist) {
-        // Arrived
         c.state = 'parked';
         c.parkedUntil = now + 18_000 + Math.random() * 20_000;
         c.lat = c.targetParking.lat;
@@ -698,26 +977,35 @@ export function tickCars(
       return c;
     }
 
-    // Normal road driving ------------------------------------------------------
-    const spd         = BASE_SPEED[c.type] * getSpeedMult(c.lat, c.lng);
-    c.distAlongRoute  = (c.distAlongRoute + spd * delta / 1_000) % c.routeInfo.totalDist;
-    const pos         = posOnRoute(c.routeInfo, c.distAlongRoute);
+    const routeBlocked = isRouteBlocked(c);
+    const nearIncident = pointHitsIncident(c.lat, c.lng, incidents, 180);
+    const distToIncident = getDistToIncidentAhead(c);
+    if (nearIncident || (routeBlocked && distToIncident !== null && distToIncident < 1800)) {
+      c.state = 'rerouting';
+      c.incidentId = incidents[0]?.id ?? c.incidentId;
+      if (c.rerouteStartedAt === 0) c.rerouteStartedAt = now;
+      return c;
+    }
+
+    const spd = BASE_SPEED[c.type] * getSpeedMult(c.lat, c.lng, c.bearing);
+    c.distAlongRoute = (c.distAlongRoute + spd * delta / 1_000) % c.routeInfo.totalDist;
+    const pos = posOnRoute(c.routeInfo, c.distAlongRoute);
     c.lat = pos.lat; c.lng = pos.lng; c.bearing = pos.bearing;
 
-    // Occasionally decide to park (only cars flagged canPark – ~10 % of fleet)
     if (c.canPark && Math.random() < 0.000_08 * delta) {
-      const available = cityData.locations.filter(l => {
+      const available = cityData.locations.filter((l) => {
         if (l.type !== 'parking') return false;
-        const p = cityData.parking.find(p => p.sensorId === l.id);
+        const p = cityData.parking.find((pk) => pk.sensorId === l.id);
         return p && p.availableSpaces >= 3;
       });
       if (available.length > 0) {
-        let nearest = available[0], minD = Infinity;
+        let nearest = available[0];
+        let minD = Infinity;
         for (const al of available) {
           const d2 = mDist(c.lat, c.lng, al.lat, al.lng);
           if (d2 < minD) { minD = d2; nearest = al; }
         }
-        c.state         = 'seeking_parking';
+        c.state = 'seeking_parking';
         c.targetParking = { lat: nearest.lat, lng: nearest.lng, name: nearest.name };
       }
     }

@@ -1,0 +1,16 @@
+# Environment variables and secrets
+.env
+.env.local
+.env.*.local
+secrets.txt
+*.secret
+
+# BFG repo-cleaner artifacts (local tooling, not part of the project)
+bfg.jar
+repo-mirror.git/
+repo-mirror.git.bfg-report/
+
+# OS files
+Thumbs.db
+Desktop.ini
+.DS_Store

@@ -61,24 +61,7 @@ Sustav simulira podatke tipične za pravi digital twin:
 - npm ili yarn
 - **Mapbox API token** (besplatan) - vidi upute ispod
 
-### Brza Instalacija (Preporučeno)
-
-Nakon što clone-aš projekt, pokreni install script:
-
-**Windows:**
-```bash
-install.bat
-```
-
-**Linux/Mac:**
-```bash
-chmod +x setup.sh
-./setup.sh
-```
-
-Script automatski instalira sve dependencies za backend i frontend.
-
-### Manualna Instalacija
+### Instalacija
 
 ```bash
 # Instalacija backend dependencies
@@ -103,12 +86,6 @@ npm install
 
 ### Pokretanje Development Servera
 
-**Najbrži način** - pokreni oba servera odjednom:
-```bash
-start.bat
-```
-
-**Ili manualno:**
 ```bash
 # Terminal 1 - Backend (port 3001)
 cd backend

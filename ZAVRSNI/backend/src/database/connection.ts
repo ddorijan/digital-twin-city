@@ -98,7 +98,7 @@ export const getDatabaseStats = () => {
 
     // Get row counts for each table
     const tables = ['sensor_readings', 'vehicle_positions', 'sensor_readings_5min', 
-                    'sensor_readings_hourly', 'city_events', 'alerts', 'system_metrics'];
+                    'sensor_readings_hourly', 'sensor_readings_daily', 'city_events', 'alerts', 'system_metrics'];
     
     for (const table of tables) {
       try {

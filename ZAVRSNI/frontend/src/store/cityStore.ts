@@ -15,6 +15,8 @@ interface CityStore {
   liveFeed: LiveFeedEntry[];
   metricsHistory: MetricSnapshot[];
   updateCityData: (data: CityData) => void;
+  addLiveFeedEntry: (entry: LiveFeedEntry) => void;
+  removeLiveFeedEntry: (id: string) => void;
   setConnected: (connected: boolean) => void;
   toggleFilter: (type: SensorType) => void;
 }
@@ -114,9 +116,14 @@ export const useCityStore = create<CityStore>((set) => ({
         });
       }
 
+      // Only still-active incidents stay pinned - once resolved (status set to
+      // 'normal'), they behave like any other entry and naturally scroll away
+      // instead of leaving a stale "critical" banner stuck at the top forever.
+      const incidentEntries = state.liveFeed.filter((entry) => entry.type === 'incident' && entry.status === 'critical');
+      const otherEntries = state.liveFeed.filter((entry) => !(entry.type === 'incident' && entry.status === 'critical'));
       const newFeed =
         newEntries.length > 0
-          ? [...newEntries, ...state.liveFeed].slice(0, MAX_FEED)
+          ? [...incidentEntries, ...newEntries, ...otherEntries].slice(0, MAX_FEED)
           : state.liveFeed;
 
       const now = new Date();
@@ -133,6 +140,18 @@ export const useCityStore = create<CityStore>((set) => ({
       return { cityData: data, liveFeed: newFeed, metricsHistory: newHistory };
     });
   },
+
+  addLiveFeedEntry: (entry) =>
+    set((state) => {
+      const withoutSame = state.liveFeed.filter((item) => item.id !== entry.id);
+      const next = [entry, ...withoutSame];
+      const incidents = next.filter((item) => item.type === 'incident' && item.status === 'critical');
+      const rest = next.filter((item) => !(item.type === 'incident' && item.status === 'critical'));
+      return { liveFeed: [...incidents, ...rest].slice(0, MAX_FEED) };
+    }),
+
+  removeLiveFeedEntry: (id) =>
+    set((state) => ({ liveFeed: state.liveFeed.filter((item) => item.id !== id) })),
 
   setConnected: (connected) => set({ isConnected: connected }),
 
